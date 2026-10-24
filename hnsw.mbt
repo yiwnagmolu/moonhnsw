@@ -370,6 +370,64 @@ pub fn Hnsw::load_bytes(data : Bytes) -> Hnsw raise HnswError {
 }
 
 ///|
+/// Checks the graph invariants: every link id in range and present on the
+/// linked layer, node levels within bounds, degree budgets respected, alive
+/// counters consistent, labels complete and the entry point holding the top
+/// level. Raises `CorruptData` on the first violation.
+///
+/// Intended for tests and for auditing indexes produced by `load`; it walks
+/// the whole graph, so it is O(count + edges).
+pub fn Hnsw::verify(self : Hnsw) -> Unit raise HnswError {
+  if self.alive_count < 0 || self.alive_count > self.count {
+    raise CorruptData("alive count out of range")
+  }
+  if self.visited.length() < self.count || self.alive.length() < self.count {
+    raise CorruptData("marker arrays too small")
+  }
+  if self.labels.length() != self.count || self.links.length() != self.count {
+    raise CorruptData("node count mismatch")
+  }
+  let mut alive = 0
+  for id in 0..<self.count {
+    let node = self.links[id]
+    let top = node.length() - 1
+    if top < 0 || top > self.max_level {
+      raise CorruptData("node level out of range")
+    }
+    for l in 0..<=top {
+      let lst = node[l]
+      if lst.length() > self.max_links(l) {
+        raise CorruptData("degree exceeds the link budget")
+      }
+      for e in lst {
+        if e < 0 || e >= self.count {
+          raise CorruptData("link id out of range")
+        }
+        if self.links[e].length() <= l {
+          raise CorruptData("link target absent from this layer")
+        }
+      }
+    }
+    if self.alive[id] {
+      alive += 1
+    }
+  }
+  if alive != self.alive_count {
+    raise CorruptData("alive count mismatch")
+  }
+  if self.count > 0 {
+    if self.entry < 0 || self.entry >= self.count {
+      raise CorruptData("entry point out of range")
+    }
+    if self.links[self.entry].length() - 1 != self.max_level {
+      raise CorruptData("entry point does not hold the top level")
+    }
+  } else if self.entry != -1 || self.max_level != -1 {
+    raise CorruptData("empty index must have no entry point")
+  }
+}
+
+///|
 /// Deletes the vector with the given id using tombstone semantics.
 ///
 /// The node stays in the graph (preserving connectivity and the id space)

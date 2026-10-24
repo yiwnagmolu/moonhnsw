@@ -283,6 +283,7 @@ test "save/load roundtrip preserves search results" {
   assert_eq(idx2.size(), n)
   assert_eq(idx2.max_level, idx.max_level)
   assert_eq(idx2.entry, idx.entry)
+  idx2.verify()
   let queries = gen_dataset(8UL, 5, dim, 0.0, 1.0)
   for qi in 0..<5 {
     let q = row_of(queries, qi, dim)
@@ -872,4 +873,30 @@ test "search results support equality and debug printing" {
   assert_eq(r1, idx.copy().search(q, 5, ef=64))
   // Metric values compare too.
   assert_true(r1[0] != { id: r1[0].id, distance: r1[0].distance + 1.0, })
+}
+
+///|
+test "verify accepts healthy indexes and detects tampering" {
+  let n = 60
+  let dim = 8
+  let data = gen_dataset(107UL, n, dim, 0.0, 1.0)
+  let idx = Hnsw::new(dim, L2)
+  for i in 0..<n {
+    let _ = idx.add(row_of(data, i, dim))
+  }
+  let _ = idx.delete(9)
+  idx.verify()
+  Hnsw::load(idx.save()).verify()
+  idx.compact().index.verify()
+  // Corrupt one link id; verify() must reject the graph.
+  let mut tampered = false
+  for id in 0..<n {
+    if !tampered && idx.links[id][0].length() > 0 {
+      idx.links[id][0][0] = 999999
+      tampered = true
+    }
+  }
+  assert_true(tampered)
+  let bad : Result[Unit, HnswError] = Ok(idx.verify()) catch { e => Err(e) }
+  assert_true(bad is Err(_))
 }

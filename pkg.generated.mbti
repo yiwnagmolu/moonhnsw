@@ -70,6 +70,7 @@ pub fn Hnsw::search_radius(Self, FixedArray[Float], Double, max_results? : Int32
 pub fn Hnsw::size(Self) -> Int32
 pub fn Hnsw::stats(Self) -> HnswStats
 pub fn Hnsw::total(Self) -> Int32
+pub fn Hnsw::verify(Self) -> Unit raise HnswError
 
 pub struct HnswParams {
   m : Int32
