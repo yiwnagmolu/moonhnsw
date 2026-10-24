@@ -1,0 +1,272 @@
+///|
+/// Growable little-endian byte sink.
+priv struct ByteBuf {
+  mut buf : FixedArray[Byte]
+  mut len : Int32
+}
+
+///|
+fn ByteBuf::new() -> ByteBuf {
+  { buf: FixedArray::make(256, b'\x00'), len: 0, }
+}
+
+///|
+fn ByteBuf::ensure(self : ByteBuf, extra : Int32) -> Unit {
+  if self.len + extra <= self.buf.length() {
+    return
+  }
+  let mut cap = self.buf.length() * 2
+  while cap < self.len + extra {
+    cap = cap * 2
+  }
+  let grown : FixedArray[Byte] = FixedArray::make(cap, b'\x00')
+  FixedArray::unsafe_blit(grown, 0, self.buf, 0, self.len)
+  self.buf = grown
+}
+
+///|
+fn ByteBuf::put_byte(self : ByteBuf, v : Byte) -> Unit {
+  self.ensure(1)
+  self.buf[self.len] = v
+  self.len += 1
+}
+
+///|
+fn ByteBuf::put_u32(self : ByteBuf, v : Int32) -> Unit {
+  self.ensure(4)
+  self.buf[self.len] = (v & 0xFF).to_byte()
+  self.buf[self.len + 1] = ((v >> 8) & 0xFF).to_byte()
+  self.buf[self.len + 2] = ((v >> 16) & 0xFF).to_byte()
+  self.buf[self.len + 3] = ((v >> 24) & 0xFF).to_byte()
+  self.len += 4
+}
+
+///|
+fn ByteBuf::put_u64(self : ByteBuf, v : UInt64) -> Unit {
+  self.put_byte(v.to_byte())
+  self.put_byte((v >> 8).to_byte())
+  self.put_byte((v >> 16).to_byte())
+  self.put_byte((v >> 24).to_byte())
+  self.put_byte((v >> 32).to_byte())
+  self.put_byte((v >> 40).to_byte())
+  self.put_byte((v >> 48).to_byte())
+  self.put_byte((v >> 56).to_byte())
+}
+
+///|
+fn ByteBuf::put_f32(self : ByteBuf, v : Float) -> Unit {
+  let bits = v.reinterpret_as_uint()
+  self.put_byte(bits.to_byte())
+  self.put_byte((bits >> 8).to_byte())
+  self.put_byte((bits >> 16).to_byte())
+  self.put_byte((bits >> 24).to_byte())
+}
+
+///|
+fn ByteBuf::to_fixed(self : ByteBuf) -> FixedArray[Byte] {
+  let out : FixedArray[Byte] = FixedArray::make(self.len, b'\x00')
+  FixedArray::unsafe_blit(out, 0, self.buf, 0, self.len)
+  out
+}
+
+///|
+/// Little-endian cursor over a byte buffer.
+priv struct ByteReader {
+  data : FixedArray[Byte]
+  mut pos : Int32
+}
+
+///|
+fn ByteReader::new(data : FixedArray[Byte]) -> ByteReader {
+  { data, pos: 0, }
+}
+
+///|
+fn ByteReader::byte(self : ByteReader) -> Int32 raise HnswError {
+  if self.pos >= self.data.length() {
+    raise CorruptData("unexpected end of data")
+  }
+  let b = self.data[self.pos]
+  self.pos += 1
+  b.to_int() & 0xFF
+}
+
+///|
+fn ByteReader::u32(self : ByteReader) -> Int32 raise HnswError {
+  let b0 = self.byte()
+  let b1 = self.byte()
+  let b2 = self.byte()
+  let b3 = self.byte()
+  b0 | (b1 << 8) | (b2 << 16) | (b3 << 24)
+}
+
+///|
+fn ByteReader::u64(self : ByteReader) -> UInt64 raise HnswError {
+  let mut v : UInt64 = 0UL
+  let mut i = 0
+  while i < 8 {
+    v = v | (self.byte().to_uint64() << (i * 8))
+    i += 1
+  }
+  v
+}
+
+///|
+fn ByteReader::f32(self : ByteReader) -> Float raise HnswError {
+  let bits = self.u32()
+  Float::reinterpret_from_int(bits)
+}
+
+///|
+fn read_magic(r : ByteReader) -> Unit raise HnswError {
+  if r.byte() != b'M'.to_int() ||
+    r.byte() != b'H'.to_int() ||
+    r.byte() != b'N'.to_int() ||
+    r.byte() != b'S'.to_int() ||
+    r.byte() != b'W'.to_int() {
+    raise CorruptData("bad magic, not a moonhnsw payload")
+  }
+}
+
+///|
+/// Serializes the whole index (parameters, vectors and graph) into a
+/// self-contained byte buffer. The payload can be written to a file or sent
+/// over the network and restored with `Hnsw::load`; searching a loaded index
+/// yields exactly the same results as the original.
+pub fn Hnsw::save(self : Hnsw) -> FixedArray[Byte] {
+  let b = ByteBuf::new()
+  b.put_byte(b'M')
+  b.put_byte(b'H')
+  b.put_byte(b'N')
+  b.put_byte(b'S')
+  b.put_byte(b'W')
+  b.put_byte(b'\x01')
+  b.put_u32(self.dim)
+  b.put_byte(
+    match self.distance {
+      L2 => b'\x00'
+      InnerProduct => b'\x01'
+      Cosine => b'\x02'
+    },
+  )
+  b.put_u32(self.params.m)
+  b.put_u32(self.params.ef_construction)
+  b.put_u64(self.params.seed)
+  b.put_u32(self.entry)
+  b.put_u32(self.max_level)
+  b.put_u32(self.count)
+  b.put_u64(self.rng_state)
+  let total = self.count * self.dim
+  let mut i = 0
+  while i < total {
+    b.put_f32(self.vectors.unsafe_get(i))
+    i += 1
+  }
+  for node in self.links {
+    b.put_u32(node.length())
+    for lst in node {
+      b.put_u32(lst.length())
+      for e in lst {
+        b.put_u32(e)
+      }
+    }
+  }
+  b.to_fixed()
+}
+
+///|
+/// Restores an index produced by `Hnsw::save`. Raises `CorruptData` when the
+/// payload is truncated or inconsistent. The returned index keeps accepting
+/// new insertions.
+pub fn Hnsw::load(data : FixedArray[Byte]) -> Hnsw raise HnswError {
+  let r = ByteReader::new(data)
+  read_magic(r)
+  let version = r.byte()
+  if version != 1 {
+    raise CorruptData("unsupported format version \{version}")
+  }
+  let dim = r.u32()
+  if dim < 1 {
+    raise CorruptData("dim must be >= 1")
+  }
+  let metric_code = r.byte()
+  let distance = match metric_code {
+    0 => L2
+    1 => InnerProduct
+    2 => Cosine
+    _ => raise CorruptData("unknown distance metric code \{metric_code}")
+  }
+  let m = r.u32()
+  let ef_construction = r.u32()
+  let seed = r.u64()
+  let entry = r.u32()
+  let max_level = r.u32()
+  let count = r.u32()
+  let rng_state = r.u64()
+  if m < 2 || ef_construction < 1 {
+    raise CorruptData("invalid graph parameters")
+  }
+  if count == 0 {
+    if entry != -1 || max_level != -1 {
+      raise CorruptData("empty index must have no entry point")
+    }
+  } else {
+    if entry < 0 || entry >= count {
+      raise CorruptData("entry point out of range")
+    }
+    if max_level < 0 {
+      raise CorruptData("non-empty index must have a level")
+    }
+  }
+  let total = count * dim
+  let vectors : FixedArray[Float] = FixedArray::make(total, 0.0)
+  let mut i = 0
+  while i < total {
+    vectors[i] = r.f32()
+    i += 1
+  }
+  let links : Array[Array[Array[Int32]]] = []
+  for _ in 0..<count {
+    let n_levels = r.u32()
+    if n_levels < 1 || n_levels > max_level + 1 {
+      raise CorruptData("node level out of range")
+    }
+    let node : Array[Array[Int32]] = []
+    for _ in 0..<n_levels {
+      let n_links = r.u32()
+      if n_links < 0 || n_links > count {
+        raise CorruptData("link list length out of range")
+      }
+      let lst : Array[Int32] = []
+      for _ in 0..<n_links {
+        let e = r.u32()
+        if e < 0 || e >= count {
+          raise CorruptData("link id out of range")
+        }
+        lst.push(e)
+      }
+      node.push(lst)
+    }
+    links.push(node)
+  }
+  let visited_len = if count < 64 { 64 } else { count }
+  {
+    dim,
+    distance,
+    params: HnswParams::new(m~, ef_construction~, seed~),
+    normalize: match distance {
+      Cosine => true
+      _ => false
+    },
+    level_mult: 1.0 / @math.ln(m.to_double()),
+    entry,
+    max_level,
+    count,
+    vectors,
+    capacity: count,
+    links,
+    visited: FixedArray::make(visited_len, 0),
+    stamp: 0,
+    rng_state,
+  }
+}

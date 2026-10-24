@@ -1,0 +1,59 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "yiwnagmolu/moonhnsw"
+
+// Values
+pub fn distance(Distance, FixedArray[Float], FixedArray[Float]) -> Double raise HnswError
+
+// Errors
+pub suberror HnswError {
+  InvalidParams(String)
+  DimMismatch(Int32, Int32)
+  CorruptData(String)
+}
+pub fn HnswError::message(Self) -> String
+
+// Types and methods
+pub(all) enum Distance {
+  L2
+  InnerProduct
+  Cosine
+}
+
+pub struct Hnsw {
+  dim : Int32
+  distance : Distance
+  params : HnswParams
+  normalize : Bool
+  level_mult : Double
+  mut entry : Int32
+  mut max_level : Int32
+  mut count : Int32
+  mut vectors : FixedArray[Float]
+  mut capacity : Int32
+  links : Array[Array[Array[Int32]]]
+  mut visited : FixedArray[Int32]
+  mut stamp : Int32
+  mut rng_state : UInt64
+}
+pub fn Hnsw::add(Self, FixedArray[Float]) -> Int32 raise HnswError
+pub fn Hnsw::load(FixedArray[Byte]) -> Self raise HnswError
+pub fn Hnsw::new(Int32, Distance, params? : HnswParams) -> Self raise HnswError
+pub fn Hnsw::save(Self) -> FixedArray[Byte]
+pub fn Hnsw::search(Self, FixedArray[Float], Int32, ef? : Int32) -> Array[Neighbor] raise HnswError
+pub fn Hnsw::size(Self) -> Int32
+
+pub struct HnswParams {
+  m : Int32
+  ef_construction : Int32
+  seed : UInt64
+}
+pub fn HnswParams::new(m? : Int32, ef_construction? : Int32, seed? : UInt64) -> Self
+
+pub struct Neighbor {
+  id : Int32
+  distance : Double
+}
+
+// Type aliases
+
+// Traits

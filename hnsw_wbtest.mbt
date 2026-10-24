@@ -1,0 +1,350 @@
+// Whitebox tests: exercise internal helpers (heap, rng, brute force) and the
+// public API from the same package. Public-surface behavior is additionally
+// covered from an external package's perspective in api_test.mbt.
+
+///|
+test "heap min and max ordering" {
+  let h = Heap::new(true)
+  h.push(3.0, 3)
+  h.push(1.0, 1)
+  h.push(2.0, 2)
+  assert_eq(h.top().0, 1.0)
+  assert_eq(h.pop().1, 1)
+  assert_eq(h.pop().1, 2)
+  assert_eq(h.pop().1, 3)
+  assert_eq(h.size(), 0)
+  let g = Heap::new(false)
+  g.push(1.0, 1)
+  g.push(5.0, 5)
+  g.push(3.0, 3)
+  assert_eq(g.top().1, 5)
+  assert_eq(g.pop().1, 5)
+  assert_eq(g.pop().1, 3)
+  assert_eq(g.pop().1, 1)
+}
+
+///|
+/// Deterministic SplitMix64 PRNG for test datasets.
+priv struct TestRng {
+  mut state : UInt64
+}
+
+///|
+fn TestRng::new(seed : UInt64) -> TestRng {
+  { state: seed, }
+}
+
+///|
+fn TestRng::next_u64(self : TestRng) -> UInt64 {
+  let (state, out) = splitmix_next(self.state)
+  self.state = state
+  out
+}
+
+///|
+/// Uniform random double in [0, 1).
+fn TestRng::next_f64(self : TestRng) -> Double {
+  (self.next_u64() >> 11).to_double() * (1.0 / 9007199254740992.0)
+}
+
+///|
+test "rng is deterministic per seed" {
+  let a = TestRng::new(123UL)
+  let b = TestRng::new(123UL)
+  let mut same = true
+  for _ in 0..<8 {
+    if a.next_u64() != b.next_u64() {
+      same = false
+    }
+  }
+  let c = TestRng::new(123UL)
+  let d = TestRng::new(124UL)
+  let mut diff = false
+  for _ in 0..<8 {
+    if c.next_f64() != d.next_f64() {
+      diff = true
+    }
+  }
+  assert_true(same)
+  assert_true(diff)
+}
+
+///|
+test "small exact query" {
+  let idx = Hnsw::new(2, L2)
+  assert_eq(idx.add(FixedArray::from_array([0.0, 0.0])), 0)
+  assert_eq(idx.add(FixedArray::from_array([1.0, 0.0])), 1)
+  assert_eq(idx.add(FixedArray::from_array([0.0, 1.0])), 2)
+  assert_eq(idx.size(), 3)
+  let res = idx.search(FixedArray::from_array([0.9, 0.05]), 1)
+  assert_eq(res.length(), 1)
+  assert_eq(res[0].id, 1)
+  assert_true(res[0].distance < 0.05)
+}
+
+///|
+test "edge cases" {
+  let idx = Hnsw::new(4, L2)
+  assert_eq(idx.search(FixedArray::make(4, 0.0), 5).length(), 0)
+  let _ = idx.add(FixedArray::from_array([1.0, 0.0, 0.0, 0.0]))
+  // k larger than the number of stored vectors
+  assert_eq(idx.search(FixedArray::make(4, 0.0), 5).length(), 1)
+  // k = 0
+  assert_eq(idx.search(FixedArray::make(4, 0.0), 0).length(), 0)
+  // dimension mismatches raise
+  let bad_add : Result[Int32, HnswError] = Ok(idx.add(FixedArray::make(3, 0.0))) catch {
+    e => Err(e)
+  }
+  assert_true(bad_add is Err(_))
+  let bad_search : Result[Array[Neighbor], HnswError] = Ok(
+    idx.search(FixedArray::make(5, 0.0), 1),
+  ) catch {
+    e => Err(e)
+  }
+  assert_true(bad_search is Err(_))
+  // invalid constructor arguments raise
+  let bad_dim : Result[Hnsw, HnswError] = Ok(Hnsw::new(0, L2)) catch {
+    e => Err(e)
+  }
+  assert_true(bad_dim is Err(_))
+}
+
+///|
+test "duplicate vectors" {
+  let idx = Hnsw::new(2, L2)
+  let v : FixedArray[Float] = FixedArray::from_array([1.0, 1.0])
+  for _ in 0..<50 {
+    let _ = idx.add(v)
+  }
+  let res = idx.search(v, 5)
+  assert_eq(res.length(), 5)
+  assert_eq(res[0].distance, 0.0)
+}
+
+///|
+fn gen_dataset(
+  seed : UInt64,
+  n : Int32,
+  dim : Int32,
+  low : Double,
+  high : Double,
+) -> FixedArray[Float] {
+  let rng = TestRng::new(seed)
+  let data : FixedArray[Float] = FixedArray::make(n * dim, 0.0)
+  let mut i = 0
+  while i < n * dim {
+    data[i] = Float::from_double(low + rng.next_f64() * (high - low))
+    i += 1
+  }
+  data
+}
+
+///|
+fn row_of(
+  data : FixedArray[Float],
+  row : Int32,
+  dim : Int32,
+) -> FixedArray[Float] {
+  let out : FixedArray[Float] = FixedArray::make(dim, 0.0)
+  FixedArray::unsafe_blit(out, 0, data, row * dim, dim)
+  out
+}
+
+///|
+/// Exact top-k ids by brute force, using the same distance convention as the
+/// index. Callers pre-normalize `data` and `q` for Cosine.
+fn brute_topk(
+  metric : Distance,
+  data : FixedArray[Float],
+  n : Int32,
+  dim : Int32,
+  q : FixedArray[Float],
+  k : Int32,
+) -> Array[Int32] {
+  let dists : Array[(Double, Int32)] = []
+  for i in 0..<n {
+    dists.push((distance_between(metric, q, 0, data, i * dim, dim), i))
+  }
+  let _ = sort_pairs_ascending(dists)
+  let out : Array[Int32] = []
+  for i in 0..<k {
+    out.push(dists[i].1)
+  }
+  out
+}
+
+///|
+fn normalize_dataset(
+  data : FixedArray[Float],
+  n : Int32,
+  dim : Int32,
+) -> FixedArray[Float] {
+  let out : FixedArray[Float] = FixedArray::make(n * dim, 0.0)
+  for i in 0..<n {
+    let _ = copy_normalized(data, i * dim, out, i * dim, dim, true)
+  }
+  out
+}
+
+///|
+fn recall_of(
+  metric : Distance,
+  seed : UInt64,
+  n : Int32,
+  dim : Int32,
+  m : Int32,
+  ef_construction : Int32,
+  ef : Int32,
+  k : Int32,
+) -> Double raise HnswError {
+  // Uniform data in [0, 1)^dim avoids zero vectors for Cosine.
+  let data = gen_dataset(seed, n, dim, 0.0, 1.0)
+  let idx = Hnsw::new(
+    dim,
+    metric,
+    params=HnswParams::new(m~, ef_construction~, seed=seed + 1UL),
+  )
+  for i in 0..<n {
+    let _ = idx.add(row_of(data, i, dim))
+  }
+  let queries = gen_dataset(seed + 2UL, 20, dim, 0.0, 1.0)
+  let truth_data = match metric {
+    Cosine => normalize_dataset(data, n, dim)
+    _ => data
+  }
+  let mut hits = 0
+  for qi in 0..<20 {
+    let raw_q = row_of(queries, qi, dim)
+    let q = match metric {
+      Cosine => {
+        let nq : FixedArray[Float] = FixedArray::make(dim, 0.0)
+        let _ = copy_normalized(raw_q, 0, nq, 0, dim, true)
+        nq
+      }
+      _ => raw_q
+    }
+    let res = idx.search(raw_q, k, ef~)
+    let truth = brute_topk(metric, truth_data, n, dim, q, k)
+    for r in res {
+      for t in truth {
+        if r.id == t {
+          hits += 1
+          break
+        }
+      }
+    }
+  }
+  hits.to_double() / (20 * k).to_double()
+}
+
+///|
+test "recall@10 for L2" {
+  let recall = recall_of(L2, 42UL, 400, 16, 16, 200, 100, 10)
+  assert_true(recall >= 0.9)
+}
+
+///|
+test "recall@10 for inner product" {
+  let recall = recall_of(InnerProduct, 43UL, 400, 16, 16, 200, 150, 10)
+  assert_true(recall >= 0.85)
+}
+
+///|
+test "recall@10 for cosine" {
+  let recall = recall_of(Cosine, 44UL, 400, 16, 16, 200, 100, 10)
+  assert_true(recall >= 0.9)
+}
+
+///|
+test "hierarchy emerges for larger indices" {
+  let data = gen_dataset(45UL, 400, 8, 0.0, 1.0)
+  let idx = Hnsw::new(8, L2)
+  for i in 0..<400 {
+    let _ = idx.add(row_of(data, i, 8))
+  }
+  // With m = 16 the chance that no node reaches layer 1 is ~e^-25.
+  assert_true(idx.max_level >= 1)
+}
+
+///|
+test "save/load roundtrip preserves search results" {
+  let n = 200
+  let dim = 8
+  let data = gen_dataset(7UL, n, dim, 0.0, 1.0)
+  let idx = Hnsw::new(
+    dim,
+    L2,
+    params=HnswParams::new(m=12, ef_construction=120, seed=99UL),
+  )
+  for i in 0..<n {
+    let _ = idx.add(row_of(data, i, dim))
+  }
+  let idx2 = Hnsw::load(idx.save())
+  assert_eq(idx2.size(), n)
+  assert_eq(idx2.max_level, idx.max_level)
+  assert_eq(idx2.entry, idx.entry)
+  let queries = gen_dataset(8UL, 5, dim, 0.0, 1.0)
+  for qi in 0..<5 {
+    let q = row_of(queries, qi, dim)
+    let a = idx.search(q, 10, ef=64)
+    let b = idx2.search(q, 10, ef=64)
+    assert_eq(a.length(), b.length())
+    for j in 0..<a.length() {
+      assert_eq(a[j].id, b[j].id)
+      assert_eq(a[j].distance, b[j].distance)
+    }
+  }
+  // A loaded index keeps accepting insertions.
+  assert_eq(idx2.add(FixedArray::make(dim, 0.5)), n)
+  assert_eq(idx2.size(), n + 1)
+}
+
+///|
+test "save/load empty index and every metric roundtrips" {
+  for metric in [L2, InnerProduct, Cosine] {
+    let idx = Hnsw::new(3, metric)
+    let idx2 = Hnsw::load(idx.save())
+    assert_eq(idx2.size(), 0)
+    assert_eq(idx2.search(FixedArray::make(3, 1.0), 5).length(), 0)
+    let _ = idx2.add(FixedArray::from_array([1.0, 0.0, 0.0]))
+    let _ = idx2.add(FixedArray::from_array([0.0, 1.0, 0.0]))
+    assert_eq(idx2.size(), 2)
+  }
+}
+
+///|
+test "cosine distances live in [-2, 0] and rank by angle" {
+  let idx = Hnsw::new(2, Cosine)
+  let _ = idx.add(FixedArray::from_array([1.0, 0.0]))
+  let _ = idx.add(FixedArray::from_array([0.0, 1.0]))
+  let res = idx.search(FixedArray::from_array([1.0, 0.0]), 2)
+  // distance = -cos(angle): identical direction scores -1, orthogonal 0.
+  assert_eq(res[0].id, 0)
+  assert_true(res[0].distance < -0.99)
+  assert_true(res[1].distance > -0.01 && res[1].distance < 0.01)
+}
+
+///|
+test "corrupt payloads are rejected" {
+  let idx = Hnsw::new(4, L2)
+  let _ = idx.add(FixedArray::from_array([1.0, 0.0, 0.0, 0.0]))
+  let bytes = idx.save()
+  // Truncated payload.
+  let truncated : FixedArray[Byte] = FixedArray::make(
+    bytes.length() - 10,
+    b'\x00',
+  )
+  FixedArray::unsafe_blit(truncated, 0, bytes, 0, truncated.length())
+  let r1 : Result[Hnsw, HnswError] = Ok(Hnsw::load(truncated)) catch {
+    e => Err(e)
+  }
+  assert_true(r1 is Err(_))
+  // Broken magic.
+  let bad_magic : FixedArray[Byte] = FixedArray::make(bytes.length(), b'\x00')
+  FixedArray::unsafe_blit(bad_magic, 0, bytes, 0, bytes.length())
+  bad_magic[0] = b'X'
+  let r2 : Result[Hnsw, HnswError] = Ok(Hnsw::load(bad_magic)) catch {
+    e => Err(e)
+  }
+  assert_true(r2 is Err(_))
+}
