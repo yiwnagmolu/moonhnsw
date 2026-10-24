@@ -110,7 +110,15 @@ moon run --target wasm-gc examples/benchmark-large
 
 ## Implementation notes
 
-- Multi-layer graph where each node's top layer is drawn from a geometric distribution (SplitMix64 PRNG, seeded); insertion descends greedily from the entry point, then runs a beam search (`ef_construction`) per layer and connects via the diversity heuristic (Algorithm 4 of the paper).
+- The graph is a hierarchy of proximity subgraphs. Every node lives on layer 0; each node's top layer is drawn from a geometric distribution, so upper layers hold roughly `1/m` of the nodes below them:
+
+```
+layer 2   e──────────────              (entry, a handful of nodes)
+layer 1   a───b─────g───────           (greedy descent)
+layer 0   a─b─c─d─e─f─g─h─i─...        (all nodes, beam search)
+```
+
+  Insertion draws the node's top layer (SplitMix64 PRNG, seeded), descends greedily from the entry point, then runs a beam search (`ef_construction`) per layer and connects via the diversity heuristic (Algorithm 4 of the paper).
 - New nodes keep `m` links per layer; overflowing neighbor lists of existing nodes are re-selected with the same heuristic.
 - Beam search uses a binary heap for candidates (min) and results (max), and an O(1) generation-stamp array for the visited set.
 - Distance accumulation stays in `f32` (as in hnswlib): inputs are f32 and only comparisons matter, so skipping per-element f64 widening is measurably faster on every backend.
