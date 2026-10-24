@@ -11,7 +11,10 @@ pub(all) enum Distance {
   L2
   InnerProduct
   Cosine
-}
+} derive(Eq)
+
+///|
+pub extend Distance with Eq::{not_equal, equal}
 
 ///|
 /// Tuning parameters of the index. Construct with `HnswParams::new` to get
@@ -68,7 +71,13 @@ pub fn HnswError::message(self : HnswError) -> String {
 pub struct Neighbor {
   id : Int32
   distance : Double
-}
+} derive(Eq, @debug.Debug)
+
+///|
+pub extend Neighbor with Eq::{not_equal, equal}
+
+///|
+pub extend Neighbor with @moonbitlang/core/debug.Debug::{to_repr}
 
 ///|
 /// An approximate nearest-neighbor index over fixed-dimension `f32` vectors,
@@ -213,7 +222,13 @@ pub struct HnswStats {
   /// Rough estimate of the heap memory held by the index, in bytes: vector
   /// storage, edge ids, per-list overhead and traversal markers.
   estimated_bytes : Int64
-}
+} derive(Eq, @debug.Debug)
+
+///|
+pub extend HnswStats with Eq::{not_equal, equal}
+
+///|
+pub extend HnswStats with @moonbitlang/core/debug.Debug::{to_repr}
 
 ///|
 /// Collects diagnostic statistics about the graph: how many nodes live on
@@ -307,7 +322,7 @@ pub fn Hnsw::absorb(
   if other.dim != self.dim {
     raise DimMismatch(self.dim, other.dim)
   }
-  if distance_code(other.distance) != distance_code(self.distance) {
+  if other.distance != self.distance {
     raise InvalidParams("distance metric mismatch")
   }
   let n = other.count
@@ -318,16 +333,6 @@ pub fn Hnsw::absorb(
     }
   }
   mapping
-}
-
-///|
-/// Stable code for a distance metric, used for equality checks.
-fn distance_code(d : Distance) -> Int32 {
-  match d {
-    L2 => 0
-    InnerProduct => 1
-    Cosine => 2
-  }
 }
 
 ///|

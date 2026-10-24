@@ -856,3 +856,20 @@ test "save_bytes and load_bytes roundtrip" {
     }
   }
 }
+
+///|
+test "search results support equality and debug printing" {
+  let dim = 4
+  let data = gen_dataset(105UL, 40, dim, 0.0, 1.0)
+  let idx = Hnsw::new(dim, L2)
+  for i in 0..<40 {
+    let _ = idx.add(row_of(data, i, dim))
+  }
+  let q = row_of(data, 3, dim)
+  let r1 = idx.search(q, 5, ef=64)
+  // A copied index answers identically; Neighbor derives Eq, so whole result
+  // lists compare directly instead of field by field.
+  assert_eq(r1, idx.copy().search(q, 5, ef=64))
+  // Metric values compare too.
+  assert_true(r1[0] != { id: r1[0].id, distance: r1[0].distance + 1.0, })
+}

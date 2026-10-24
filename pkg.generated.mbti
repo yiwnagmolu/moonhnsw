@@ -1,6 +1,10 @@
 // Generated using `moon info`, DON'T EDIT IT
 package "yiwnagmolu/moonhnsw"
 
+import {
+  "moonbitlang/core/debug",
+}
+
 // Values
 pub fn distance(Distance, FixedArray[Float], FixedArray[Float]) -> Double raise HnswError
 
@@ -23,7 +27,9 @@ pub(all) enum Distance {
   L2
   InnerProduct
   Cosine
-}
+} derive(Eq)
+pub fn Distance::equal(Self, Self) -> Bool
+pub fn Distance::not_equal(Self, Self) -> Bool
 
 pub struct Hnsw {
   dim : Int32
@@ -79,12 +85,18 @@ pub struct HnswStats {
   nodes_per_level : Array[Int32]
   avg_degree_per_level : Array[Double]
   estimated_bytes : Int64
-}
+} derive(Eq, @debug.Debug)
+pub fn HnswStats::equal(Self, Self) -> Bool
+pub fn HnswStats::not_equal(Self, Self) -> Bool
+pub fn HnswStats::to_repr(Self) -> @debug.Repr
 
 pub struct Neighbor {
   id : Int32
   distance : Double
-}
+} derive(Eq, @debug.Debug)
+pub fn Neighbor::equal(Self, Self) -> Bool
+pub fn Neighbor::not_equal(Self, Self) -> Bool
+pub fn Neighbor::to_repr(Self) -> @debug.Repr
 
 // Type aliases
 
