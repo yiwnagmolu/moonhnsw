@@ -74,10 +74,10 @@ Measured with the bundled `examples/benchmark` on uniform random data (n=2000, d
 
 | Phase | Result |
 | --- | --- |
-| Build | 1004 ms total (~502 us per vector) |
-| Search, ef=64 | recall@10 = **1.00**, 4630 queries/s |
-| Search, ef=128 | recall@10 = **1.00**, 3250 queries/s |
-| Search, ef=256 | recall@10 = **1.00**, 1824 queries/s |
+| Build | 942 ms total (~471 us per vector) |
+| Search, ef=64 | recall@10 = **1.00**, 5530 queries/s |
+| Search, ef=128 | recall@10 = **1.00**, 3426 queries/s |
+| Search, ef=256 | recall@10 = **1.00**, 2072 queries/s |
 
 Recall is verified against exact brute-force ground truth in the test suite for all three metrics (recall@10 >= 0.9 on random datasets).
 
@@ -92,6 +92,7 @@ moon run --target wasm-gc examples/benchmark
 - Multi-layer graph where each node's top layer is drawn from a geometric distribution (SplitMix64 PRNG, seeded); insertion descends greedily from the entry point, then runs a beam search (`ef_construction`) per layer and connects via the diversity heuristic (Algorithm 4 of the paper).
 - New nodes keep `m` links per layer; overflowing neighbor lists of existing nodes are re-selected with the same heuristic.
 - Beam search uses a binary heap for candidates (min) and results (max), and an O(1) generation-stamp array for the visited set.
+- Distance accumulation stays in `f32` (as in hnswlib): inputs are f32 and only comparisons matter, so skipping per-element f64 widening is measurably faster on every backend.
 - Storage layout: one flattened `FixedArray[Float]` of `count * dim` values, doubled geometrically; graph edges as `Array[Array[Array[Int]]]`.
 - Serialization is little-endian with a magic header and version byte; every length and id is validated on load.
 

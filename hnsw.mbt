@@ -632,6 +632,10 @@ pub fn distance(
 /// Distance between two vector slices of length `dim`, under `metric`.
 /// For `InnerProduct` and `Cosine` the inner product is negated so that
 /// smaller always means more similar.
+///
+/// Accumulation happens in `Float`, matching hnswlib: the input is f32, the
+/// result only feeds comparisons, and skipping the per-element f64 widening
+/// is measurably faster on every backend.
 fn distance_between(
   metric : Distance,
   a : FixedArray[Float],
@@ -642,25 +646,23 @@ fn distance_between(
 ) -> Double {
   match metric {
     L2 => {
-      let mut s = 0.0
+      let mut s : Float = 0.0
       let mut i = 0
       while i < dim {
-        let d = a.unsafe_get(a_off + i).to_double() -
-          b.unsafe_get(b_off + i).to_double()
+        let d = a.unsafe_get(a_off + i) - b.unsafe_get(b_off + i)
         s += d * d
         i += 1
       }
-      s
+      s.to_double()
     }
     InnerProduct | Cosine => {
-      let mut s = 0.0
+      let mut s : Float = 0.0
       let mut i = 0
       while i < dim {
-        s += a.unsafe_get(a_off + i).to_double() *
-          b.unsafe_get(b_off + i).to_double()
+        s += a.unsafe_get(a_off + i) * b.unsafe_get(b_off + i)
         i += 1
       }
-      -s
+      -s.to_double()
     }
   }
 }
