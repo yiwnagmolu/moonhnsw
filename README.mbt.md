@@ -8,7 +8,8 @@ Feed in `f32` vectors, get back the approximate top-k nearest neighbors. No FFI,
 
 - **HNSW graph index** with incremental `add`, deterministic `search(top-k)`, approximate `search_radius`, and binary `save` / `load`.
 - **Tombstone deletion**: `delete(id)` hides vectors from all searches while keeping the graph connected; `compact()` rebuilds a tombstone-free index and hands you an old-id → new-id mapping.
-- **Introspection**: `stats()` reports per-layer node counts and average degree; `get_vector(id)` and `contains(id)` expose the stored data.
+- **Introspection**: `stats()` reports per-layer node counts, average degree and a rough memory estimate; `get_vector(id)` and `contains(id)` expose the stored data.
+- **External labels**: `add_labeled(vector, label)` tags each vector with a `UInt64` key (a document or chunk id); labels persist through `save` / `load` and `compact`.
 - **Three metrics** with a smaller-is-closer convention: `L2` (squared Euclidean), `InnerProduct` (negated dot product), `Cosine` (vectors normalized once on insertion).
 - **Tunable** `m`, `ef_construction`, and per-query `ef` — the standard recall/speed trade-off knobs.
 - **Zero-copy friendly storage**: vectors live in one flattened `FixedArray[Float]`; traversal marks visited nodes with generation stamps instead of hash sets; distances accumulate in f32 like hnswlib.
@@ -49,6 +50,8 @@ moon add yiwnagmolu/moonhnsw
 | --- | --- |
 | `Hnsw::new(dim, distance, params~)` | Create an empty index over `dim`-dimensional vectors. |
 | `Hnsw::add(vector) -> Int` | Insert one vector, returns its id. Raises on dimension mismatch. |
+| `Hnsw::add_labeled(vector, label) -> Int` | Insert tagged with a `UInt64` label of your choice (need not be unique). |
+| `Hnsw::label_of(id) -> UInt64` | Label stored for an id; defaults to the id itself. |
 | `Hnsw::search(query, k, ef~ = 64) -> Array[Neighbor]` | Approximate top-k, sorted by distance ascending. |
 | `Hnsw::search_radius(query, radius, max_results~ = 64)` | All neighbors within a distance bound, ascending; approximate like top-k. |
 | `Hnsw::delete(id)` | Tombstone-delete a vector; it disappears from every search. |
@@ -87,8 +90,9 @@ Measured with the bundled `examples/benchmark` on uniform random data (n=2000, d
 | InnerProduct | 2 000 | 1281 ms | recall 1.00, 6224 q/s | recall 1.00, 3781 q/s | recall 1.00, 2250 q/s |
 | Cosine | 2 000 | 965 ms | recall 1.00, 5168 q/s | recall 1.00, 3225 q/s | recall 1.00, 1939 q/s |
 | L2 (scale) | 10 000 | 9554 ms | recall 0.97, 3003 q/s | recall 1.00, 1328 q/s | recall 1.00, 761 q/s |
+| L2 (large) | 100 000 | 184.0 s | recall 0.83, 1992 q/s | recall 0.95, 885 q/s | recall 1.00, 550 q/s |
 
-At 10k vectors the ef trade-off becomes visible: `ef=64` reaches 0.97 recall, `ef=128` already 1.00.
+At 10k vectors the ef trade-off becomes visible: `ef=64` reaches 0.97 recall, `ef=128` already 1.00. At 100k the graph is 4 layers tall (~30 MB estimated); random data needs `ef=256` for exact recall — raise `m` if you want the same recall at lower `ef`.
 
 Recall is verified against exact brute-force ground truth in the test suite for all three metrics (recall@10 >= 0.9 on random datasets).
 
@@ -96,6 +100,7 @@ Run it yourself:
 
 ```
 moon run --target wasm-gc examples/benchmark
+moon run --target wasm-gc examples/benchmark-large
 ```
 
 ## Implementation notes

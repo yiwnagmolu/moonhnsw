@@ -28,5 +28,8 @@ jobs:
       - name: Build (wasm)
         run: moon build --target wasm
 
+      - name: Build documentation
+        run: moon doc
+
       - name: Benchmark smoke run
         run: moon run --target wasm-gc examples/benchmark
