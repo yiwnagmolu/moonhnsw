@@ -587,3 +587,45 @@ test "get_vector returns the normalized vector for cosine" {
   assert_true(v[0].to_double() > 0.5999 && v[0].to_double() < 0.6001)
   assert_true(v[1].to_double() > 0.7999 && v[1].to_double() < 0.8001)
 }
+
+///|
+test "stats reports level distribution and degrees" {
+  let n = 400
+  let dim = 8
+  let data = gen_dataset(71UL, n, dim, 0.0, 1.0)
+  let idx = Hnsw::new(dim, L2)
+  for i in 0..<n {
+    let _ = idx.add(row_of(data, i, dim))
+  }
+  let s = idx.stats()
+  assert_eq(s.count, n)
+  assert_eq(s.alive, n)
+  assert_eq(s.max_level, idx.max_level)
+  assert_eq(s.nodes_per_level.length(), idx.max_level + 1)
+  // Every node participates on layer 0; upper layers shrink geometrically.
+  assert_eq(s.nodes_per_level[0], n)
+  if s.max_level >= 1 {
+    assert_true(s.nodes_per_level[1] > 0 && s.nodes_per_level[1] < n)
+  }
+  // Degrees respect the link budgets: 2m on layer 0, m above (m = 16).
+  for l in 0..<s.nodes_per_level.length() {
+    let budget = if l == 0 { 32.0 } else { 16.0 }
+    assert_true(s.avg_degree_per_level[l] <= budget)
+  }
+  assert_true(s.avg_degree_per_level[0] > 0.0)
+}
+
+///|
+test "stats on empty and partially deleted indexes" {
+  let idx = Hnsw::new(3, L2)
+  let s0 = idx.stats()
+  assert_eq(s0.max_level, -1)
+  assert_eq(s0.nodes_per_level.length(), 0)
+  let _ = idx.add(FixedArray::make(3, 1.0))
+  let _ = idx.add(FixedArray::make(3, 2.0))
+  let _ = idx.delete(0)
+  let s = idx.stats()
+  assert_eq(s.alive, 1)
+  assert_eq(s.count, 2)
+  assert_eq(s.nodes_per_level[0], 2)
+}

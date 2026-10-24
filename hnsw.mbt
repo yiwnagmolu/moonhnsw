@@ -183,6 +183,58 @@ pub fn Hnsw::get_vector(
 }
 
 ///|
+/// Diagnostic snapshot of the index graph.
+pub struct HnswStats {
+  /// Total insertions, including deleted tombstones.
+  count : Int32
+  /// Non-deleted (searchable) vectors.
+  alive : Int32
+  /// Highest layer in use; -1 for an empty index.
+  max_level : Int32
+  /// Number of nodes participating on each layer (index 0..=max_level).
+  /// Deleted nodes still participate: their edges keep the graph connected.
+  nodes_per_level : Array[Int32]
+  /// Average number of links per participating node on each layer.
+  avg_degree_per_level : Array[Double]
+}
+
+///|
+/// Collects diagnostic statistics about the graph: how many nodes live on
+/// each layer and how densely they are connected. Handy when tuning `m` and
+/// `ef_construction`.
+pub fn Hnsw::stats(self : Hnsw) -> HnswStats {
+  let levels = if self.max_level < 0 { 0 } else { self.max_level + 1 }
+  let nodes : Array[Int32] = Array::make(levels, 0)
+  let degree_sum : Array[Int32] = Array::make(levels, 0)
+  for node in self.links {
+    let top = node.length() - 1
+    let mut l = 0
+    while l <= top {
+      nodes[l] += 1
+      degree_sum[l] += node[l].length()
+      l += 1
+    }
+  }
+  let avg : Array[Double] = []
+  for l in 0..<levels {
+    avg.push(
+      if nodes[l] == 0 {
+        0.0
+      } else {
+        degree_sum[l].to_double() / nodes[l].to_double()
+      },
+    )
+  }
+  {
+    count: self.count,
+    alive: self.alive_count,
+    max_level: self.max_level,
+    nodes_per_level: nodes,
+    avg_degree_per_level: avg,
+  }
+}
+
+///|
 /// Deletes the vector with the given id using tombstone semantics.
 ///
 /// The node stays in the graph (preserving connectivity and the id space)
