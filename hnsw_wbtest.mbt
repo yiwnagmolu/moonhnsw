@@ -451,3 +451,107 @@ test "save/load preserves deletions" {
   assert_eq(new_id, n)
   assert_eq(idx2.size(), n - 3)
 }
+
+///|
+test "radius search matches brute force" {
+  let n = 200
+  let dim = 4
+  let data = gen_dataset(61UL, n, dim, 0.0, 1.0)
+  let idx = Hnsw::new(dim, L2)
+  for i in 0..<n {
+    let _ = idx.add(row_of(data, i, dim))
+  }
+  let queries = gen_dataset(62UL, 10, dim, 0.0, 1.0)
+  let mut hits = 0
+  let mut truth_total = 0
+  for qi in 0..<10 {
+    let q = row_of(queries, qi, dim)
+    // Radius = distance of the 10th nearest neighbor.
+    let top10 = brute_topk(L2, data, n, dim, q, 10)
+    let radius = distance_between(L2, q, 0, data, top10[9] * dim, dim)
+    let truth : Array[Int32] = []
+    for i in 0..<n {
+      if distance_between(L2, q, 0, data, i * dim, dim) <= radius {
+        truth.push(i)
+      }
+    }
+    truth_total += truth.length()
+    let res = idx.search_radius(q, radius)
+    for r in res {
+      assert_true(r.distance <= radius + 1.0e-9)
+      for t in truth {
+        if r.id == t {
+          hits += 1
+          break
+        }
+      }
+    }
+  }
+  let recall = hits.to_double() / truth_total.to_double()
+  assert_true(recall >= 0.85)
+}
+
+///|
+test "radius zero returns exact matches only" {
+  let idx = Hnsw::new(2, L2)
+  let v : FixedArray[Float] = FixedArray::from_array([1.0, 1.0])
+  for _ in 0..<5 {
+    let _ = idx.add(v)
+  }
+  let _ = idx.add(FixedArray::from_array([0.5, 0.5]))
+  // The graph entry point may be the outlier; exact matches must still be
+  // found through it.
+  let res = idx.search_radius(v, 0.0)
+  assert_eq(res.length(), 5)
+  for r in res {
+    assert_eq(r.distance, 0.0)
+  }
+}
+
+///|
+test "radius search caps results and validates input" {
+  let n = 50
+  let dim = 4
+  let data = gen_dataset(63UL, n, dim, 0.0, 1.0)
+  let idx = Hnsw::new(dim, L2)
+  for i in 0..<n {
+    let _ = idx.add(row_of(data, i, dim))
+  }
+  let q = row_of(data, 0, dim)
+  let res = idx.search_radius(q, 1.0e9, max_results=5)
+  assert_eq(res.length(), 5)
+  for j in 1..<res.length() {
+    assert_true(res[j - 1].distance <= res[j].distance)
+  }
+  // max_results <= 0 yields no results instead of an error.
+  assert_eq(idx.search_radius(q, 1.0e9, max_results=0).length(), 0)
+  // A negative radius raises.
+  let bad : Result[Array[Neighbor], HnswError] = Ok(idx.search_radius(q, -1.0)) catch {
+    e => Err(e)
+  }
+  assert_true(bad is Err(_))
+  // A dimension mismatch raises.
+  let baddim : Result[Array[Neighbor], HnswError] = Ok(
+    idx.search_radius(FixedArray::make(3, 0.0), 1.0),
+  ) catch {
+    e => Err(e)
+  }
+  assert_true(baddim is Err(_))
+}
+
+///|
+test "radius search respects deletions" {
+  let dim = 4
+  let idx = Hnsw::new(dim, L2)
+  let v : FixedArray[Float] = FixedArray::from_array([1.0, 0.0, 0.0, 0.0])
+  for _ in 0..<6 {
+    let _ = idx.add(v)
+  }
+  let _ = idx.delete(0)
+  let _ = idx.delete(2)
+  let res = idx.search_radius(v, 0.0)
+  assert_eq(res.length(), 4)
+  for r in res {
+    assert_true(r.id != 0 && r.id != 2)
+  }
+}

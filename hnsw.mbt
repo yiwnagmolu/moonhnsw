@@ -316,10 +316,17 @@ fn Hnsw::greedy_descent(
 ///|
 /// Beam search on one layer (Algorithm 2 of the HNSW paper). `eps` are
 /// (distance, id) entry points; returns up to `ef` results sorted by
-/// distance, ascending. Deleted (tombstone) nodes are traversed for
-/// connectivity but excluded from the results, unless `include_dead` is set —
-/// index construction uses that mode so new nodes stay linked into the graph
-/// even when their surroundings are deleted.
+/// distance, ascending.
+///
+/// Deleted (tombstone) nodes are traversed for connectivity but excluded
+/// from the results, unless `include_dead` is set — index construction uses
+/// that mode so new nodes stay linked into the graph even when their
+/// surroundings are deleted.
+///
+/// When `cutoff` is finite, expansion stops once every remaining candidate
+/// is farther than the cutoff (radius search); entry points are always
+/// expanded once so that neighbors inside the radius are still discovered
+/// when every entry point itself lies outside it.
 fn Hnsw::search_layer(
   self : Hnsw,
   q : FixedArray[Float],
@@ -327,17 +334,33 @@ fn Hnsw::search_layer(
   ef : Int32,
   layer : Int32,
   include_dead~ : Bool = false,
+  cutoff~ : Double = 1.0e308,
 ) -> Array[(Double, Int32)] {
   let stamp = self.next_stamp()
   let visited = self.visited
   let candidates = Heap::new(true)
   let results = Heap::new(false)
+  let seeds : Array[Int32] = []
   for (d, e) in eps {
     if e >= 0 && e < self.count && visited[e] != stamp {
       visited[e] = stamp
       candidates.push(d, e)
-      if include_dead || self.alive[e] {
+      if d <= cutoff && (include_dead || self.alive[e]) {
         results.push(d, e)
+      }
+      seeds.push(e)
+    }
+  }
+  // Expand the entry points once unconditionally.
+  for e in seeds {
+    for nb in self.links[e][layer] {
+      if visited[nb] != stamp {
+        visited[nb] = stamp
+        let d = self.dist_query(q, nb)
+        candidates.push(d, nb)
+        if d <= cutoff && (include_dead || self.alive[nb]) {
+          results.push(d, nb)
+        }
       }
     }
   }
@@ -346,6 +369,9 @@ fn Hnsw::search_layer(
   }
   while candidates.size() > 0 {
     let c = candidates.top()
+    if c.0 > cutoff {
+      break
+    }
     if results.size() >= ef && c.0 > results.top().0 {
       break
     }
@@ -354,7 +380,7 @@ fn Hnsw::search_layer(
       if visited[e] != stamp {
         visited[e] = stamp
         let d = self.dist_query(q, e)
-        if results.size() < ef || d < results.top().0 {
+        if d <= cutoff && (results.size() < ef || d < results.top().0) {
           candidates.push(d, e)
           if include_dead || self.alive[e] {
             results.push(d, e)
@@ -520,6 +546,61 @@ pub fn Hnsw::search(
   }
   let q : FixedArray[Float] = FixedArray::make(self.dim, 0.0)
   let _ = copy_normalized(query, 0, q, 0, self.dim, self.normalize)
+  let r = self.descend_entry(q)
+  let width = if ef < k { k } else { ef }
+  let cands = self.search_layer(q, [r], width, 0)
+  let out : Array[Neighbor] = []
+  for (d, id) in cands {
+    if out.length() >= k {
+      break
+    }
+    out.push({ id, distance: d, })
+  }
+  out
+}
+
+///|
+/// Approximate radius search: returns up to `max_results` non-deleted
+/// neighbors with distance <= `radius`, sorted by distance ascending.
+///
+/// Like top-k search this is graph-approximate: expansion stops once every
+/// remaining candidate is farther than `radius`, so a neighbor just inside
+/// the radius can be missed when it is only reachable through farther nodes.
+/// Entry points are always expanded, which keeps exact-match queries
+/// (`radius = 0`) working.
+pub fn Hnsw::search_radius(
+  self : Hnsw,
+  query : FixedArray[Float],
+  radius : Double,
+  max_results~ : Int32 = 64,
+) -> Array[Neighbor] raise HnswError {
+  if query.length() != self.dim {
+    raise DimMismatch(self.dim, query.length())
+  }
+  if max_results <= 0 {
+    return []
+  }
+  if self.count == 0 || self.alive_count == 0 {
+    return []
+  }
+  if radius < 0.0 {
+    raise InvalidParams("radius must be >= 0")
+  }
+  let q : FixedArray[Float] = FixedArray::make(self.dim, 0.0)
+  let _ = copy_normalized(query, 0, q, 0, self.dim, self.normalize)
+  let ep = self.descend_entry(q)
+  let cands = self.search_layer(q, [ep], max_results, 0, cutoff=radius)
+  let out : Array[Neighbor] = []
+  for (d, id) in cands {
+    out.push({ id, distance: d, })
+  }
+  out
+}
+
+///|
+/// Greedy descent from the entry point down to layer 0; returns the
+/// (distance, id) local minimum used to seed the layer-0 beam search.
+fn Hnsw::descend_entry(self : Hnsw, q : FixedArray[Float]) -> (Double, Int32) {
   let mut ep = self.entry
   let mut ep_dist = self.dist_query(q, ep)
   let mut cur = self.max_level
@@ -529,16 +610,7 @@ pub fn Hnsw::search(
     ep_dist = r.1
     cur -= 1
   }
-  let width = if ef < k { k } else { ef }
-  let cands = self.search_layer(q, [(ep_dist, ep)], width, 0)
-  let out : Array[Neighbor] = []
-  for (d, id) in cands {
-    if out.length() >= k {
-      break
-    }
-    out.push({ id, distance: d, })
-  }
-  out
+  (ep_dist, ep)
 }
 
 ///|
