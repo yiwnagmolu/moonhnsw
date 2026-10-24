@@ -140,7 +140,7 @@ pub fn Hnsw::save(self : Hnsw) -> FixedArray[Byte] {
   b.put_byte(b'N')
   b.put_byte(b'S')
   b.put_byte(b'W')
-  b.put_byte(b'\x02')
+  b.put_byte(b'\x03')
   b.put_u32(self.dim)
   b.put_byte(
     match self.distance {
@@ -160,6 +160,9 @@ pub fn Hnsw::save(self : Hnsw) -> FixedArray[Byte] {
   while i < self.count {
     b.put_byte(if self.alive[i] { b'\x01' } else { b'\x00' })
     i += 1
+  }
+  for lbl in self.labels {
+    b.put_u64(lbl)
   }
   let total = self.count * self.dim
   let mut i = 0
@@ -187,7 +190,7 @@ pub fn Hnsw::load(data : FixedArray[Byte]) -> Hnsw raise HnswError {
   let r = ByteReader::new(data)
   read_magic(r)
   let version = r.byte()
-  if version != 1 && version != 2 {
+  if version != 1 && version != 2 && version != 3 {
     raise CorruptData("unsupported format version \{version}")
   }
   let dim = r.u32()
@@ -224,6 +227,21 @@ pub fn Hnsw::load(data : FixedArray[Byte]) -> Hnsw raise HnswError {
       if flag == 1 {
         alive_count += 1
       }
+      i += 1
+    }
+  }
+  // Version 3 carries one label per vector; earlier versions used the id.
+  let labels : Array[UInt64] = []
+  if version >= 3 {
+    let mut i = 0
+    while i < count {
+      labels.push(r.u64())
+      i += 1
+    }
+  } else {
+    let mut i = 0
+    while i < count {
+      labels.push(i.to_uint64())
       i += 1
     }
   }
@@ -288,6 +306,7 @@ pub fn Hnsw::load(data : FixedArray[Byte]) -> Hnsw raise HnswError {
     count,
     alive_count,
     alive,
+    labels,
     vectors,
     capacity: count,
     links,

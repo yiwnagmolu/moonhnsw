@@ -98,6 +98,8 @@ pub struct Hnsw {
   mut alive_count : Int32
   /// Alive markers for tombstone deletion, keyed by node id.
   mut alive : FixedArray[Bool]
+  /// User-facing label per node; defaults to the internal id.
+  labels : Array[UInt64]
   /// Flattened vector storage: `count * dim` floats.
   mut vectors : FixedArray[Float]
   /// Number of vector slots allocated in `vectors`.
@@ -138,6 +140,7 @@ pub fn Hnsw::new(
     count: 0,
     alive_count: 0,
     alive: FixedArray::make(0, false),
+    labels: [],
     vectors: FixedArray::make(0, 0.0),
     capacity: 0,
     links: [],
@@ -163,6 +166,17 @@ pub fn Hnsw::total(self : Hnsw) -> Int32 {
 /// Returns true when `id` refers to a stored, non-deleted vector.
 pub fn Hnsw::contains(self : Hnsw, id : Int32) -> Bool {
   id >= 0 && id < self.count && self.alive[id]
+}
+
+///|
+/// Returns the label stored for `id` — the id itself by default, or the
+/// value passed to `add_labeled`. Raises `InvalidId` for unknown or deleted
+/// ids.
+pub fn Hnsw::label_of(self : Hnsw, id : Int32) -> UInt64 raise HnswError {
+  if !self.contains(id) {
+    raise InvalidId(id)
+  }
+  self.labels[id]
 }
 
 ///|
@@ -258,7 +272,7 @@ pub fn Hnsw::compact(self : Hnsw) -> CompactResult raise HnswError {
     if self.alive[id] {
       let v : FixedArray[Float] = FixedArray::make(self.dim, 0.0)
       FixedArray::unsafe_blit(v, 0, self.vectors, id * self.dim, self.dim)
-      mapping[id] = fresh.add(v)
+      mapping[id] = fresh.add_labeled(v, self.labels[id])
     }
   }
   { index: fresh, mapping, }
@@ -545,10 +559,33 @@ fn Hnsw::select_heuristic(
 /// Inserts a vector and returns its id (0-based insertion order).
 ///
 /// The vector is copied into the index; later mutation of the input array
-/// does not affect the index.
+/// does not affect the index. The id doubles as the vector's label.
 pub fn Hnsw::add(
   self : Hnsw,
   vector : FixedArray[Float],
+) -> Int32 raise HnswError {
+  self.insert(vector, self.count.to_uint64())
+}
+
+///|
+/// Inserts a vector tagged with a user-chosen label (any `UInt64` key, e.g.
+/// a document or chunk id) and returns its internal id.
+///
+/// Labels do not need to be unique; read them back with `label_of(id)`.
+/// The vector is copied into the index.
+pub fn Hnsw::add_labeled(
+  self : Hnsw,
+  vector : FixedArray[Float],
+  label : UInt64,
+) -> Int32 raise HnswError {
+  self.insert(vector, label)
+}
+
+///|
+fn Hnsw::insert(
+  self : Hnsw,
+  vector : FixedArray[Float],
+  label : UInt64,
 ) -> Int32 raise HnswError {
   if vector.length() != self.dim {
     raise DimMismatch(self.dim, vector.length())
@@ -572,6 +609,7 @@ pub fn Hnsw::add(
   self.links.push(node_links)
   self.ensure_visited(id + 1)
   self.ensure_alive(id + 1)
+  self.labels.push(label)
   self.alive[id] = true
   self.alive_count += 1
   self.count = id + 1

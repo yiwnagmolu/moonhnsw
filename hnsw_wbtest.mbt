@@ -679,3 +679,58 @@ test "compact of empty and fully deleted indexes" {
   assert_eq(all_dead.mapping[0], -1)
   assert_eq(all_dead.mapping[1], -1)
 }
+
+///|
+test "labels default to ids and can be customized" {
+  let idx = Hnsw::new(2, L2)
+  let a = idx.add(FixedArray::from_array([1.0, 0.0]))
+  let b = idx.add_labeled(FixedArray::from_array([0.0, 1.0]), 0xDEADBEEFUL)
+  assert_eq(a, 0)
+  assert_eq(b, 1)
+  assert_eq(idx.label_of(0), 0UL)
+  assert_eq(idx.label_of(1), 0xDEADBEEFUL)
+  // Duplicate labels are allowed; lookup stays keyed by id.
+  let c = idx.add_labeled(FixedArray::from_array([0.5, 0.5]), 0xDEADBEEFUL)
+  assert_eq(idx.label_of(c), 0xDEADBEEFUL)
+  // Unknown ids raise.
+  let bad : Result[UInt64, HnswError] = Ok(idx.label_of(3)) catch {
+    e => Err(e)
+  }
+  assert_true(bad is Err(_))
+  let _ = idx.delete(0)
+  let deleted : Result[UInt64, HnswError] = Ok(idx.label_of(0)) catch {
+    e => Err(e)
+  }
+  assert_true(deleted is Err(_))
+}
+
+///|
+test "labels survive save/load and compact" {
+  let n = 20
+  let dim = 4
+  let data = gen_dataset(91UL, n, dim, 0.0, 1.0)
+  let idx = Hnsw::new(dim, L2)
+  for i in 0..<n {
+    let _ = idx.add_labeled(row_of(data, i, dim), (1000 + i).to_uint64())
+  }
+  let _ = idx.delete(3)
+  let _ = idx.delete(11)
+  let loaded = Hnsw::load(idx.save())
+  for i in 0..<n {
+    if idx.contains(i) {
+      assert_eq(loaded.label_of(i), (1000 + i).to_uint64())
+    }
+  }
+  // Compaction remaps ids but preserves labels.
+  let result = idx.compact()
+  let fresh = result.index
+  assert_eq(fresh.size(), n - 2)
+  for old_id in 0..<n {
+    let new_id = result.mapping[old_id]
+    if new_id >= 0 {
+      assert_eq(fresh.label_of(new_id), (1000 + old_id).to_uint64())
+    } else {
+      assert_true(old_id == 3 || old_id == 11)
+    }
+  }
+}

@@ -36,6 +36,7 @@ pub struct Hnsw {
   mut count : Int32
   mut alive_count : Int32
   mut alive : FixedArray[Bool]
+  labels : Array[UInt64]
   mut vectors : FixedArray[Float]
   mut capacity : Int32
   links : Array[Array[Array[Int32]]]
@@ -44,10 +45,12 @@ pub struct Hnsw {
   mut rng_state : UInt64
 }
 pub fn Hnsw::add(Self, FixedArray[Float]) -> Int32 raise HnswError
+pub fn Hnsw::add_labeled(Self, FixedArray[Float], UInt64) -> Int32 raise HnswError
 pub fn Hnsw::compact(Self) -> CompactResult raise HnswError
 pub fn Hnsw::contains(Self, Int32) -> Bool
 pub fn Hnsw::delete(Self, Int32) -> Unit raise HnswError
 pub fn Hnsw::get_vector(Self, Int32) -> FixedArray[Float] raise HnswError
+pub fn Hnsw::label_of(Self, Int32) -> UInt64 raise HnswError
 pub fn Hnsw::load(FixedArray[Byte]) -> Self raise HnswError
 pub fn Hnsw::new(Int32, Distance, params? : HnswParams) -> Self raise HnswError
 pub fn Hnsw::save(Self) -> FixedArray[Byte]
