@@ -178,11 +178,7 @@ fn bench_metric(
   } else {
     metric
   }
-  let truth_data = if for_cosine {
-    normalize_flat(raw, n, dim)
-  } else {
-    raw
-  }
+  let truth_data = if for_cosine { normalize_flat(raw, n, dim) } else { raw }
   // Build.
   let t0 = @bench.monotonic_clock_start()
   let idx = @moonhnsw.Hnsw::new(
@@ -201,11 +197,7 @@ fn bench_metric(
   let truths : Array[Array[Int32]] = []
   for qi in 0..<n_queries {
     let q = row_of(queries, qi, dim)
-    let qt = if for_cosine {
-      normalize_flat(q, 1, dim)
-    } else {
-      q
-    }
+    let qt = if for_cosine { normalize_flat(q, 1, dim) } else { q }
     truths.push(brute_topk(truth_metric, truth_data, n, dim, qt, k))
   }
   // Warm-up search.
