@@ -39,7 +39,9 @@ pub struct Hnsw {
   mut rng_state : UInt64
 }
 pub fn Hnsw::add(Self, FixedArray[Float]) -> Int32 raise HnswError
+pub fn Hnsw::contains(Self, Int32) -> Bool
 pub fn Hnsw::delete(Self, Int32) -> Unit raise HnswError
+pub fn Hnsw::get_vector(Self, Int32) -> FixedArray[Float] raise HnswError
 pub fn Hnsw::load(FixedArray[Byte]) -> Self raise HnswError
 pub fn Hnsw::new(Int32, Distance, params? : HnswParams) -> Self raise HnswError
 pub fn Hnsw::save(Self) -> FixedArray[Byte]

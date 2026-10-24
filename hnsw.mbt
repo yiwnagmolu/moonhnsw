@@ -160,6 +160,29 @@ pub fn Hnsw::total(self : Hnsw) -> Int32 {
 }
 
 ///|
+/// Returns true when `id` refers to a stored, non-deleted vector.
+pub fn Hnsw::contains(self : Hnsw, id : Int32) -> Bool {
+  id >= 0 && id < self.count && self.alive[id]
+}
+
+///|
+/// Returns a copy of the stored vector for `id`.
+///
+/// For `Cosine` indexes this is the normalized vector as used internally.
+/// Raises `InvalidId` for unknown or deleted ids.
+pub fn Hnsw::get_vector(
+  self : Hnsw,
+  id : Int32,
+) -> FixedArray[Float] raise HnswError {
+  if !self.contains(id) {
+    raise InvalidId(id)
+  }
+  let out : FixedArray[Float] = FixedArray::make(self.dim, 0.0)
+  FixedArray::unsafe_blit(out, 0, self.vectors, id * self.dim, self.dim)
+  out
+}
+
+///|
 /// Deletes the vector with the given id using tombstone semantics.
 ///
 /// The node stays in the graph (preserving connectivity and the id space)

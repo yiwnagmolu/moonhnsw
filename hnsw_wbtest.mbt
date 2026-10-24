@@ -555,3 +555,35 @@ test "radius search respects deletions" {
     assert_true(r.id != 0 && r.id != 2)
   }
 }
+
+///|
+test "contains and get_vector accessors" {
+  let idx = Hnsw::new(3, L2)
+  let _ = idx.add(FixedArray::from_array([1.0, 2.0, 3.0]))
+  let _ = idx.add(FixedArray::from_array([4.0, 5.0, 6.0]))
+  assert_true(idx.contains(0) && idx.contains(1))
+  assert_true(!idx.contains(2))
+  assert_true(!idx.contains(-1))
+  let v = idx.get_vector(1)
+  assert_eq(v[0], 4.0)
+  assert_eq(v[2], 6.0)
+  // Mutating the returned copy does not touch the index.
+  v[0] = 99.0
+  assert_eq(idx.get_vector(1)[0], 4.0)
+  let _ = idx.delete(1)
+  assert_true(!idx.contains(1))
+  let dead : Result[FixedArray[Float], HnswError] = Ok(idx.get_vector(1)) catch {
+    e => Err(e)
+  }
+  assert_true(dead is Err(_))
+}
+
+///|
+test "get_vector returns the normalized vector for cosine" {
+  let idx = Hnsw::new(2, Cosine)
+  let _ = idx.add(FixedArray::from_array([3.0, 4.0]))
+  let v = idx.get_vector(0)
+  // (3, 4) normalized is (0.6, 0.8), within f32 rounding.
+  assert_true(v[0].to_double() > 0.5999 && v[0].to_double() < 0.6001)
+  assert_true(v[1].to_double() > 0.7999 && v[1].to_double() < 0.8001)
+}
