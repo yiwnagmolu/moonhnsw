@@ -795,3 +795,32 @@ test "absorb validates dimension and metric" {
   }
   assert_true(bad_metric is Err(_))
 }
+
+///|
+test "copy is independent and ids lists alive vectors" {
+  let n = 10
+  let dim = 4
+  let data = gen_dataset(97UL, n, dim, 0.0, 1.0)
+  let idx = Hnsw::new(dim, L2)
+  for i in 0..<n {
+    let _ = idx.add_labeled(row_of(data, i, dim), (50 + i).to_uint64())
+  }
+  let _ = idx.delete(4)
+  let _ = idx.delete(7)
+  let cp = idx.copy()
+  assert_eq(cp.size(), 8)
+  assert_eq(cp.total(), 10)
+  // Mutating the copy leaves the original untouched.
+  let _ = cp.delete(0)
+  let _ = cp.add(FixedArray::make(dim, 9.0))
+  assert_eq(idx.size(), 8)
+  assert_eq(idx.total(), 10)
+  // ids() enumerates exactly the alive vectors, ascending.
+  let alive = idx.ids()
+  assert_eq(alive.length(), 8)
+  for j in 0..<alive.length() {
+    assert_true(alive[j] != 4 && alive[j] != 7)
+    assert_true(idx.contains(alive[j]))
+  }
+  assert_true(alive[0] < alive[alive.length() - 1])
+}

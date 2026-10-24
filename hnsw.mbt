@@ -331,6 +331,26 @@ fn distance_code(d : Distance) -> Int32 {
 }
 
 ///|
+/// Returns an independent deep copy of the index, tombstones and labels
+/// included (implemented via serialization).
+pub fn Hnsw::copy(self : Hnsw) -> Hnsw raise HnswError {
+  Hnsw::load(self.save())
+}
+
+///|
+/// Returns the ids of all non-deleted vectors, ascending. Handy for
+/// pipelines that enumerate the searchable content of a persisted index.
+pub fn Hnsw::ids(self : Hnsw) -> Array[Int32] {
+  let out : Array[Int32] = []
+  for id in 0..<self.count {
+    if self.alive[id] {
+      out.push(id)
+    }
+  }
+  out
+}
+
+///|
 /// Deletes the vector with the given id using tombstone semantics.
 ///
 /// The node stays in the graph (preserving connectivity and the id space)
