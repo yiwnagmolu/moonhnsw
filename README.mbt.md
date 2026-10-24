@@ -7,7 +7,8 @@ Feed in `f32` vectors, get back the approximate top-k nearest neighbors. No FFI,
 ## Features
 
 - **HNSW graph index** with incremental `add`, deterministic `search(top-k)`, approximate `search_radius`, and binary `save` / `load`.
-- **Tombstone deletion**: `delete(id)` hides vectors from all searches while keeping the graph connected; deleted ids never come back.
+- **Tombstone deletion**: `delete(id)` hides vectors from all searches while keeping the graph connected; `compact()` rebuilds a tombstone-free index and hands you an old-id → new-id mapping.
+- **Introspection**: `stats()` reports per-layer node counts and average degree; `get_vector(id)` and `contains(id)` expose the stored data.
 - **Three metrics** with a smaller-is-closer convention: `L2` (squared Euclidean), `InnerProduct` (negated dot product), `Cosine` (vectors normalized once on insertion).
 - **Tunable** `m`, `ef_construction`, and per-query `ef` — the standard recall/speed trade-off knobs.
 - **Zero-copy friendly storage**: vectors live in one flattened `FixedArray[Float]`; traversal marks visited nodes with generation stamps instead of hash sets; distances accumulate in f32 like hnswlib.
@@ -51,6 +52,10 @@ moon add yiwnagmolu/moonhnsw
 | `Hnsw::search(query, k, ef~ = 64) -> Array[Neighbor]` | Approximate top-k, sorted by distance ascending. |
 | `Hnsw::search_radius(query, radius, max_results~ = 64)` | All neighbors within a distance bound, ascending; approximate like top-k. |
 | `Hnsw::delete(id)` | Tombstone-delete a vector; it disappears from every search. |
+| `Hnsw::contains(id) -> Bool` | True when `id` is stored and not deleted. |
+| `Hnsw::get_vector(id) -> FixedArray[Float]` | Copy of the stored vector (normalized for Cosine). |
+| `Hnsw::stats() -> HnswStats` | Per-layer node counts and average degree, for tuning. |
+| `Hnsw::compact() -> CompactResult` | Tombstone-free rebuild plus old-id → new-id mapping. |
 | `Hnsw::save() -> FixedArray[Byte]` | Serialize the full index. |
 | `Hnsw::load(bytes) -> Hnsw` | Restore an index; rejects malformed payloads with `CorruptData`. |
 | `Hnsw::size() -> Int` | Number of non-deleted (searchable) vectors. |
@@ -76,12 +81,14 @@ Distance conventions (smaller = closer):
 
 Measured with the bundled `examples/benchmark` on uniform random data (n=2000, dim=32, m=16, ef_construction=200, 100 queries, k=10), executed on the **wasm-gc** backend via `moonrun` on Windows — a conservative setting; the native backend is expected to be substantially faster.
 
-| Phase | Result |
-| --- | --- |
-| Build | 942 ms total (~471 us per vector) |
-| Search, ef=64 | recall@10 = **1.00**, 5530 queries/s |
-| Search, ef=128 | recall@10 = **1.00**, 3426 queries/s |
-| Search, ef=256 | recall@10 = **1.00**, 2072 queries/s |
+| Metric | n | Build | ef=64 | ef=128 | ef=256 |
+| --- | --- | --- | --- | --- | --- |
+| L2 | 2 000 | 1014 ms | recall 1.00, 5003 q/s | recall 1.00, 3253 q/s | recall 1.00, 1829 q/s |
+| InnerProduct | 2 000 | 1281 ms | recall 1.00, 6224 q/s | recall 1.00, 3781 q/s | recall 1.00, 2250 q/s |
+| Cosine | 2 000 | 965 ms | recall 1.00, 5168 q/s | recall 1.00, 3225 q/s | recall 1.00, 1939 q/s |
+| L2 (scale) | 10 000 | 9554 ms | recall 0.97, 3003 q/s | recall 1.00, 1328 q/s | recall 1.00, 761 q/s |
+
+At 10k vectors the ef trade-off becomes visible: `ef=64` reaches 0.97 recall, `ef=128` already 1.00.
 
 Recall is verified against exact brute-force ground truth in the test suite for all three metrics (recall@10 >= 0.9 on random datasets).
 
