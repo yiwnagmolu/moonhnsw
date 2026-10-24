@@ -293,6 +293,44 @@ pub fn Hnsw::compact(self : Hnsw) -> CompactResult raise HnswError {
 }
 
 ///|
+/// Inserts every non-deleted vector of `other` into `self`, keeping their
+/// labels, and returns a mapping from `other`'s ids to the new ids in
+/// `self` (-1 for deleted vectors).
+///
+/// Both indexes must share the same dimension and distance metric, but may
+/// differ in parameters. `other` is left untouched; no deduplication
+/// happens. Merging an index into itself doubles it.
+pub fn Hnsw::absorb(
+  self : Hnsw,
+  other : Hnsw,
+) -> FixedArray[Int32] raise HnswError {
+  if other.dim != self.dim {
+    raise DimMismatch(self.dim, other.dim)
+  }
+  if distance_code(other.distance) != distance_code(self.distance) {
+    raise InvalidParams("distance metric mismatch")
+  }
+  let n = other.count
+  let mapping : FixedArray[Int32] = FixedArray::make(n, -1)
+  for id in 0..<n {
+    if other.contains(id) {
+      mapping[id] = self.add_labeled(other.get_vector(id), other.label_of(id))
+    }
+  }
+  mapping
+}
+
+///|
+/// Stable code for a distance metric, used for equality checks.
+fn distance_code(d : Distance) -> Int32 {
+  match d {
+    L2 => 0
+    InnerProduct => 1
+    Cosine => 2
+  }
+}
+
+///|
 /// Deletes the vector with the given id using tombstone semantics.
 ///
 /// The node stays in the graph (preserving connectivity and the id space)

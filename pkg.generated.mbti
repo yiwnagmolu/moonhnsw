@@ -44,6 +44,7 @@ pub struct Hnsw {
   mut stamp : Int32
   mut rng_state : UInt64
 }
+pub fn Hnsw::absorb(Self, Self) -> FixedArray[Int32] raise HnswError
 pub fn Hnsw::add(Self, FixedArray[Float]) -> Int32 raise HnswError
 pub fn Hnsw::add_labeled(Self, FixedArray[Float], UInt64) -> Int32 raise HnswError
 pub fn Hnsw::compact(Self) -> CompactResult raise HnswError

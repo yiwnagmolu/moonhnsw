@@ -736,3 +736,62 @@ test "labels survive save/load and compact" {
     }
   }
 }
+
+///|
+test "absorb merges another index with labels" {
+  let dim = 4
+  let a = Hnsw::new(
+    dim,
+    L2,
+    params=HnswParams::new(m=8, ef_construction=100, seed=1UL),
+  )
+  let b = Hnsw::new(
+    dim,
+    L2,
+    params=HnswParams::new(m=8, ef_construction=100, seed=2UL),
+  )
+  let data_a = gen_dataset(95UL, 10, dim, 0.0, 1.0)
+  let data_b = gen_dataset(96UL, 7, dim, 0.0, 1.0)
+  for i in 0..<10 {
+    let _ = a.add_labeled(row_of(data_a, i, dim), (100 + i).to_uint64())
+  }
+  for i in 0..<7 {
+    let _ = b.add_labeled(row_of(data_b, i, dim), (200 + i).to_uint64())
+  }
+  let _ = b.delete(2)
+  let mapping = a.absorb(b)
+  assert_eq(a.size(), 16)
+  // Only non-deleted vectors transfer: b's tombstone stays behind.
+  assert_eq(a.total(), 16)
+  assert_eq(mapping.length(), 7)
+  assert_eq(mapping[2], -1)
+  for i in 0..<7 {
+    if i != 2 {
+      assert_eq(a.label_of(mapping[i]), (200 + i).to_uint64())
+    }
+  }
+  // Searches reach vectors that came from both sides.
+  let qa = row_of(data_a, 0, dim)
+  let res_a = a.search(qa, 1, ef=64)
+  assert_eq(res_a[0].id, 0)
+  let qb = row_of(data_b, 0, dim)
+  let res_b = a.search(qb, 1, ef=64)
+  assert_eq(a.label_of(res_b[0].id), 200UL)
+}
+
+///|
+test "absorb validates dimension and metric" {
+  let a = Hnsw::new(4, L2)
+  let wrong_dim = Hnsw::new(3, L2)
+  let wrong_metric = Hnsw::new(4, Cosine)
+  let bad_dim : Result[FixedArray[Int32], HnswError] = Ok(a.absorb(wrong_dim)) catch {
+    e => Err(e)
+  }
+  assert_true(bad_dim is Err(_))
+  let bad_metric : Result[FixedArray[Int32], HnswError] = Ok(
+    a.absorb(wrong_metric),
+  ) catch {
+    e => Err(e)
+  }
+  assert_true(bad_metric is Err(_))
+}
