@@ -613,6 +613,8 @@ test "stats reports level distribution and degrees" {
     assert_true(s.avg_degree_per_level[l] <= budget)
   }
   assert_true(s.avg_degree_per_level[0] > 0.0)
+  // The memory estimate must at least cover the vector storage.
+  assert_true(s.estimated_bytes >= (n * dim * 4).to_int64())
 }
 
 ///|

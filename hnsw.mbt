@@ -210,6 +210,9 @@ pub struct HnswStats {
   nodes_per_level : Array[Int32]
   /// Average number of links per participating node on each layer.
   avg_degree_per_level : Array[Double]
+  /// Rough estimate of the heap memory held by the index, in bytes: vector
+  /// storage, edge ids, per-list overhead and traversal markers.
+  estimated_bytes : Int64
 }
 
 ///|
@@ -220,12 +223,16 @@ pub fn Hnsw::stats(self : Hnsw) -> HnswStats {
   let levels = if self.max_level < 0 { 0 } else { self.max_level + 1 }
   let nodes : Array[Int32] = Array::make(levels, 0)
   let degree_sum : Array[Int32] = Array::make(levels, 0)
+  let mut lists = 0
+  let mut edges = 0
   for node in self.links {
     let top = node.length() - 1
     let mut l = 0
     while l <= top {
       nodes[l] += 1
       degree_sum[l] += node[l].length()
+      lists += 1
+      edges += node[l].length()
       l += 1
     }
   }
@@ -239,12 +246,19 @@ pub fn Hnsw::stats(self : Hnsw) -> HnswStats {
       },
     )
   }
+  let estimated = self.capacity.to_int64() * self.dim.to_int64() * 4L +
+    edges.to_int64() * 4L +
+    lists.to_int64() * 24L +
+    self.visited.length().to_int64() * 4L +
+    self.alive.length().to_int64() +
+    self.labels.length().to_int64() * 8L
   {
     count: self.count,
     alive: self.alive_count,
     max_level: self.max_level,
     nodes_per_level: nodes,
     avg_degree_per_level: avg,
+    estimated_bytes: estimated,
   }
 }
 

@@ -73,6 +73,7 @@ pub struct HnswStats {
   max_level : Int32
   nodes_per_level : Array[Int32]
   avg_degree_per_level : Array[Double]
+  estimated_bytes : Int64
 }
 
 pub struct Neighbor {
