@@ -10,6 +10,7 @@ Feed in `f32` vectors, get back the approximate top-k nearest neighbors. No FFI,
 - **Tombstone deletion**: `delete(id)` hides vectors from all searches while keeping the graph connected; `compact()` rebuilds a tombstone-free index and hands you an old-id → new-id mapping.
 - **Introspection**: `stats()` reports per-layer node counts, average degree and a rough memory estimate; `get_vector(id)` and `contains(id)` expose the stored data.
 - **External labels**: `add_labeled(vector, label)` tags each vector with a `UInt64` key (a document or chunk id); labels persist through `save` / `load` and `compact`.
+- **Composable**: `absorb()` merges another index (keeping labels), `copy()` deep-clones, and `save_bytes()` / `load_bytes()` wrap the payload as `Bytes` for binary pipelines.
 - **Three metrics** with a smaller-is-closer convention: `L2` (squared Euclidean), `InnerProduct` (negated dot product), `Cosine` (vectors normalized once on insertion).
 - **Tunable** `m`, `ef_construction`, and per-query `ef` — the standard recall/speed trade-off knobs.
 - **Zero-copy friendly storage**: vectors live in one flattened `FixedArray[Float]`; traversal marks visited nodes with generation stamps instead of hash sets; distances accumulate in f32 like hnswlib.
@@ -59,8 +60,12 @@ moon add yiwnagmolu/moonhnsw
 | `Hnsw::get_vector(id) -> FixedArray[Float]` | Copy of the stored vector (normalized for Cosine). |
 | `Hnsw::stats() -> HnswStats` | Per-layer node counts and average degree, for tuning. |
 | `Hnsw::compact() -> CompactResult` | Tombstone-free rebuild plus old-id → new-id mapping. |
+| `Hnsw::absorb(other) -> FixedArray[Int]` | Merge another index's live vectors (labels kept); returns old-id → new-id mapping. |
+| `Hnsw::copy() -> Hnsw` | Independent deep clone, tombstones and labels included. |
+| `Hnsw::ids() -> Array[Int]` | Ascending ids of all non-deleted vectors. |
 | `Hnsw::save() -> FixedArray[Byte]` | Serialize the full index. |
 | `Hnsw::load(bytes) -> Hnsw` | Restore an index; rejects malformed payloads with `CorruptData`. |
+| `Hnsw::save_bytes() / load_bytes(Bytes)` | Same payload wrapped as immutable `Bytes`. |
 | `Hnsw::size() -> Int` | Number of non-deleted (searchable) vectors. |
 | `Hnsw::total() -> Int` | Number of vectors ever inserted, including tombstones. |
 | `distance(metric, a, b) -> Double` | Metric value between two vectors — handy for brute-force ground truth. |
