@@ -6,10 +6,11 @@ Feed in `f32` vectors, get back the approximate top-k nearest neighbors. No FFI,
 
 ## Features
 
-- **HNSW graph index** with incremental `add`, deterministic `search(top-k)`, and binary `save` / `load`.
+- **HNSW graph index** with incremental `add`, deterministic `search(top-k)`, approximate `search_radius`, and binary `save` / `load`.
+- **Tombstone deletion**: `delete(id)` hides vectors from all searches while keeping the graph connected; deleted ids never come back.
 - **Three metrics** with a smaller-is-closer convention: `L2` (squared Euclidean), `InnerProduct` (negated dot product), `Cosine` (vectors normalized once on insertion).
 - **Tunable** `m`, `ef_construction`, and per-query `ef` — the standard recall/speed trade-off knobs.
-- **Zero-copy friendly storage**: vectors live in one flattened `FixedArray[Float]`; traversal marks visited nodes with generation stamps instead of hash sets.
+- **Zero-copy friendly storage**: vectors live in one flattened `FixedArray[Float]`; traversal marks visited nodes with generation stamps instead of hash sets; distances accumulate in f32 like hnswlib.
 - **Self-contained serialization**: one `save()` call produces a byte buffer you can write anywhere; `load()` restores an index that answers searches identically and keeps accepting insertions.
 - **Typed errors** (`HnswError`) with readable messages.
 
@@ -48,9 +49,12 @@ moon add yiwnagmolu/moonhnsw
 | `Hnsw::new(dim, distance, params~)` | Create an empty index over `dim`-dimensional vectors. |
 | `Hnsw::add(vector) -> Int` | Insert one vector, returns its id. Raises on dimension mismatch. |
 | `Hnsw::search(query, k, ef~ = 64) -> Array[Neighbor]` | Approximate top-k, sorted by distance ascending. |
+| `Hnsw::search_radius(query, radius, max_results~ = 64)` | All neighbors within a distance bound, ascending; approximate like top-k. |
+| `Hnsw::delete(id)` | Tombstone-delete a vector; it disappears from every search. |
 | `Hnsw::save() -> FixedArray[Byte]` | Serialize the full index. |
 | `Hnsw::load(bytes) -> Hnsw` | Restore an index; rejects malformed payloads with `CorruptData`. |
-| `Hnsw::size() -> Int` | Number of stored vectors. |
+| `Hnsw::size() -> Int` | Number of non-deleted (searchable) vectors. |
+| `Hnsw::total() -> Int` | Number of vectors ever inserted, including tombstones. |
 | `distance(metric, a, b) -> Double` | Metric value between two vectors — handy for brute-force ground truth. |
 | `HnswError::message() -> String` | Human-readable error text. |
 
@@ -98,7 +102,8 @@ moon run --target wasm-gc examples/benchmark
 
 ## Limitations & roadmap
 
-- No deletion or vector update (classic HNSW limitation) — planned as tombstone-based deletion.
+- Deletion is tombstone-based: deleted nodes keep occupying memory (ids and graph slots are never reclaimed) and in-place vector update is not supported.
+- Radius search shares the graph-approximation of top-k search: a neighbor inside the radius can be missed when it is only reachable through farther nodes.
 - Single-threaded; indexes are not to be shared across concurrent writers.
 - Ids are internal insertion order; map them to your own keys in application code.
 
