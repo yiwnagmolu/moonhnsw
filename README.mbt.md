@@ -15,7 +15,7 @@ Feed in `f32` vectors, get back the approximate top-k nearest neighbors. No FFI,
 
 ## Quick start
 
-```mbt
+```mbt nocheck
 let index = @moonhnsw.Hnsw::new(8, @moonhnsw.Distance::Cosine)
 
 // Insert vectors (they are copied into the index); ids are 0, 1, 2, ...

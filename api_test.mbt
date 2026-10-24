@@ -46,3 +46,30 @@ test "public api: invalid params raise" {
   }
   assert_true(err is Err(_))
 }
+
+///|
+test "public api: delete hides vectors from search" {
+  let idx = @moonhnsw.Hnsw::new(2, @moonhnsw.Distance::L2)
+  let _ = idx.add(FixedArray::from_array([0.0, 0.0]))
+  let _ = idx.add(FixedArray::from_array([1.0, 0.0]))
+  let _ = idx.add(FixedArray::from_array([0.0, 1.0]))
+  idx.delete(1)
+  assert_eq(idx.size(), 2)
+  assert_eq(idx.total(), 3)
+  let res = idx.search(FixedArray::from_array([1.0, 0.0]), 3, ef=32)
+  for r in res {
+    assert_true(r.id != 1)
+  }
+  // Deleting twice raises a typed error with a readable message.
+  let err : Result[Unit, @moonhnsw.HnswError] = Ok(idx.delete(1)) catch {
+    e => Err(e)
+  }
+  match err {
+    Err(e) =>
+      assert_eq(
+        e.message(),
+        "invalid vector id 1 (out of range or already deleted)",
+      )
+    Ok(_) => fail("expected an invalid id error")
+  }
+}

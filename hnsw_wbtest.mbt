@@ -348,3 +348,106 @@ test "corrupt payloads are rejected" {
   }
   assert_true(r2 is Err(_))
 }
+
+///|
+test "delete excludes vectors from search results" {
+  let n = 100
+  let dim = 8
+  let data = gen_dataset(51UL, n, dim, 0.0, 1.0)
+  let idx = Hnsw::new(dim, L2)
+  for i in 0..<n {
+    let _ = idx.add(row_of(data, i, dim))
+  }
+  // Querying with an inserted vector must return that vector first.
+  let q = row_of(data, 7, dim)
+  let before = idx.search(q, 1)
+  assert_eq(before[0].id, 7)
+  let _ = idx.delete(7)
+  assert_eq(idx.size(), n - 1)
+  assert_eq(idx.total(), n)
+  let after = idx.search(q, 1)
+  assert_true(after[0].id != 7)
+  // Asking for more results than alive vectors returns exactly the alive set.
+  let all = idx.search(q, n, ef=200)
+  assert_eq(all.length(), n - 1)
+  for r in all {
+    assert_true(r.id != 7)
+  }
+}
+
+///|
+test "delete all vectors empties the index, re-add still works" {
+  let dim = 4
+  let idx = Hnsw::new(dim, L2)
+  for i in 0..<20 {
+    let _ = idx.add(FixedArray::make(dim, Float::from_double(i.to_double())))
+  }
+  for i in 0..<20 {
+    let _ = idx.delete(i)
+  }
+  assert_eq(idx.size(), 0)
+  assert_eq(idx.total(), 20)
+  assert_eq(idx.search(FixedArray::make(dim, 1.0), 5).length(), 0)
+  let new_id = idx.add(FixedArray::make(dim, 99.0))
+  assert_eq(new_id, 20)
+  assert_eq(idx.size(), 1)
+  let res = idx.search(FixedArray::make(dim, 99.0), 1)
+  assert_eq(res[0].id, 20)
+}
+
+///|
+test "double delete and unknown id raise InvalidId" {
+  let idx = Hnsw::new(2, L2)
+  let _ = idx.add(FixedArray::from_array([1.0, 0.0]))
+  let _ = idx.add(FixedArray::from_array([0.0, 1.0]))
+  let _ = idx.delete(0)
+  let again : Result[Unit, HnswError] = Ok(idx.delete(0)) catch { e => Err(e) }
+  match again {
+    Err(InvalidId(id)) => assert_eq(id, 0)
+    _ => fail("expected InvalidId")
+  }
+  let unknown : Result[Unit, HnswError] = Ok(idx.delete(999)) catch {
+    e => Err(e)
+  }
+  assert_true(unknown is Err(_))
+  let negative : Result[Unit, HnswError] = Ok(idx.delete(-1)) catch {
+    e => Err(e)
+  }
+  assert_true(negative is Err(_))
+}
+
+///|
+test "save/load preserves deletions" {
+  let n = 60
+  let dim = 8
+  let data = gen_dataset(52UL, n, dim, 0.0, 1.0)
+  let idx = Hnsw::new(dim, L2)
+  for i in 0..<n {
+    let _ = idx.add(row_of(data, i, dim))
+  }
+  for dead in [3, 17, 42, 59] {
+    let _ = idx.delete(dead)
+  }
+  assert_eq(idx.size(), n - 4)
+  let idx2 = Hnsw::load(idx.save())
+  assert_eq(idx2.size(), n - 4)
+  assert_eq(idx2.total(), n)
+  let queries = gen_dataset(53UL, 5, dim, 0.0, 1.0)
+  for qi in 0..<5 {
+    let q = row_of(queries, qi, dim)
+    let a = idx.search(q, 10, ef=64)
+    let b = idx2.search(q, 10, ef=64)
+    assert_eq(a.length(), b.length())
+    for j in 0..<a.length() {
+      assert_eq(a[j].id, b[j].id)
+      assert_eq(a[j].distance, b[j].distance)
+    }
+    for r in b {
+      assert_true(r.id != 3 && r.id != 17 && r.id != 42 && r.id != 59)
+    }
+  }
+  // A loaded index keeps accepting insertions after deletions.
+  let new_id = idx2.add(FixedArray::make(dim, 0.5))
+  assert_eq(new_id, n)
+  assert_eq(idx2.size(), n - 3)
+}

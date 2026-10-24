@@ -140,7 +140,7 @@ pub fn Hnsw::save(self : Hnsw) -> FixedArray[Byte] {
   b.put_byte(b'N')
   b.put_byte(b'S')
   b.put_byte(b'W')
-  b.put_byte(b'\x01')
+  b.put_byte(b'\x02')
   b.put_u32(self.dim)
   b.put_byte(
     match self.distance {
@@ -156,6 +156,11 @@ pub fn Hnsw::save(self : Hnsw) -> FixedArray[Byte] {
   b.put_u32(self.max_level)
   b.put_u32(self.count)
   b.put_u64(self.rng_state)
+  let mut i = 0
+  while i < self.count {
+    b.put_byte(if self.alive[i] { b'\x01' } else { b'\x00' })
+    i += 1
+  }
   let total = self.count * self.dim
   let mut i = 0
   while i < total {
@@ -182,7 +187,7 @@ pub fn Hnsw::load(data : FixedArray[Byte]) -> Hnsw raise HnswError {
   let r = ByteReader::new(data)
   read_magic(r)
   let version = r.byte()
-  if version != 1 {
+  if version != 1 && version != 2 {
     raise CorruptData("unsupported format version \{version}")
   }
   let dim = r.u32()
@@ -203,6 +208,25 @@ pub fn Hnsw::load(data : FixedArray[Byte]) -> Hnsw raise HnswError {
   let max_level = r.u32()
   let count = r.u32()
   let rng_state = r.u64()
+  // Version 2 carries one alive byte per vector (tombstone deletion);
+  // version 1 payloads predate deletion and are fully alive.
+  let alive : FixedArray[Bool] = FixedArray::make(count, true)
+  let mut alive_count = count
+  if version >= 2 {
+    alive_count = 0
+    let mut i = 0
+    while i < count {
+      let flag = r.byte()
+      if flag > 1 {
+        raise CorruptData("invalid alive flag")
+      }
+      alive[i] = flag == 1
+      if flag == 1 {
+        alive_count += 1
+      }
+      i += 1
+    }
+  }
   if m < 2 || ef_construction < 1 {
     raise CorruptData("invalid graph parameters")
   }
@@ -262,6 +286,8 @@ pub fn Hnsw::load(data : FixedArray[Byte]) -> Hnsw raise HnswError {
     entry,
     max_level,
     count,
+    alive_count,
+    alive,
     vectors,
     capacity: count,
     links,

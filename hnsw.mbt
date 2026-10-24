@@ -46,6 +46,8 @@ pub suberror HnswError {
   DimMismatch(Int32, Int32)
   /// Serialized data is malformed.
   CorruptData(String)
+  /// A vector id does not exist or refers to a deleted vector.
+  InvalidId(Int32)
 }
 
 ///|
@@ -56,6 +58,7 @@ pub fn HnswError::message(self : HnswError) -> String {
     DimMismatch(expected, got) =>
       "dimension mismatch: index expects \{expected}, got \{got}"
     CorruptData(msg) => "corrupt data: " + msg
+    InvalidId(id) => "invalid vector id \{id} (out of range or already deleted)"
   }
 }
 
@@ -89,8 +92,12 @@ pub struct Hnsw {
   mut entry : Int32
   /// Highest layer any node participates in, -1 when the index is empty.
   mut max_level : Int32
-  /// Number of vectors stored.
+  /// Total number of vectors ever inserted (including deleted tombstones).
   mut count : Int32
+  /// Number of non-deleted (searchable) vectors.
+  mut alive_count : Int32
+  /// Alive markers for tombstone deletion, keyed by node id.
+  mut alive : FixedArray[Bool]
   /// Flattened vector storage: `count * dim` floats.
   mut vectors : FixedArray[Float]
   /// Number of vector slots allocated in `vectors`.
@@ -129,6 +136,8 @@ pub fn Hnsw::new(
     entry: -1,
     max_level: -1,
     count: 0,
+    alive_count: 0,
+    alive: FixedArray::make(0, false),
     vectors: FixedArray::make(0, 0.0),
     capacity: 0,
     links: [],
@@ -139,9 +148,48 @@ pub fn Hnsw::new(
 }
 
 ///|
-/// Number of vectors currently stored in the index.
+/// Number of non-deleted vectors currently searchable in the index.
 pub fn Hnsw::size(self : Hnsw) -> Int32 {
+  self.alive_count
+}
+
+///|
+/// Total number of vectors ever inserted, including deleted tombstones.
+pub fn Hnsw::total(self : Hnsw) -> Int32 {
   self.count
+}
+
+///|
+/// Deletes the vector with the given id using tombstone semantics.
+///
+/// The node stays in the graph (preserving connectivity and the id space)
+/// but no longer appears in search results, and new insertions never link
+/// to it. Deleting an unknown or already-deleted id raises `InvalidId`.
+pub fn Hnsw::delete(self : Hnsw, id : Int32) -> Unit raise HnswError {
+  if id < 0 || id >= self.count || !self.alive[id] {
+    raise InvalidId(id)
+  }
+  self.alive[id] = false
+  self.alive_count -= 1
+}
+
+///|
+/// Grows the alive-marker array to cover at least `needed` node ids.
+fn Hnsw::ensure_alive(self : Hnsw, needed : Int32) -> Unit {
+  if self.alive.length() >= needed {
+    return
+  }
+  let mut cap = if self.alive.length() == 0 {
+    64
+  } else {
+    self.alive.length() * 2
+  }
+  while cap < needed {
+    cap = cap * 2
+  }
+  let grown : FixedArray[Bool] = FixedArray::make(cap, false)
+  FixedArray::unsafe_blit(grown, 0, self.alive, 0, self.alive.length())
+  self.alive = grown
 }
 
 ///|
@@ -268,13 +316,17 @@ fn Hnsw::greedy_descent(
 ///|
 /// Beam search on one layer (Algorithm 2 of the HNSW paper). `eps` are
 /// (distance, id) entry points; returns up to `ef` results sorted by
-/// distance, ascending.
+/// distance, ascending. Deleted (tombstone) nodes are traversed for
+/// connectivity but excluded from the results, unless `include_dead` is set —
+/// index construction uses that mode so new nodes stay linked into the graph
+/// even when their surroundings are deleted.
 fn Hnsw::search_layer(
   self : Hnsw,
   q : FixedArray[Float],
   eps : Array[(Double, Int32)],
   ef : Int32,
   layer : Int32,
+  include_dead~ : Bool = false,
 ) -> Array[(Double, Int32)] {
   let stamp = self.next_stamp()
   let visited = self.visited
@@ -284,7 +336,9 @@ fn Hnsw::search_layer(
     if e >= 0 && e < self.count && visited[e] != stamp {
       visited[e] = stamp
       candidates.push(d, e)
-      results.push(d, e)
+      if include_dead || self.alive[e] {
+        results.push(d, e)
+      }
     }
   }
   while results.size() > ef {
@@ -302,9 +356,11 @@ fn Hnsw::search_layer(
         let d = self.dist_query(q, e)
         if results.size() < ef || d < results.top().0 {
           candidates.push(d, e)
-          results.push(d, e)
-          if results.size() > ef {
-            let _ = results.pop()
+          if include_dead || self.alive[e] {
+            results.push(d, e)
+            if results.size() > ef {
+              let _ = results.pop()
+            }
           }
         }
       }
@@ -384,6 +440,9 @@ pub fn Hnsw::add(
   }
   self.links.push(node_links)
   self.ensure_visited(id + 1)
+  self.ensure_alive(id + 1)
+  self.alive[id] = true
+  self.alive_count += 1
   self.count = id + 1
   if self.entry < 0 {
     self.entry = id
@@ -408,7 +467,13 @@ pub fn Hnsw::add(
   let mut eps : Array[(Double, Int32)] = [(ep_dist, ep)]
   let mut layer = top
   while layer >= 0 {
-    let cands = self.search_layer(q, eps, self.params.ef_construction, layer)
+    let cands = self.search_layer(
+      q,
+      eps,
+      self.params.ef_construction,
+      layer,
+      include_dead=true,
+    )
     let selected = self.select_heuristic(cands, self.params.m)
     for nb in selected {
       self.links[id][layer].push(nb)
@@ -450,7 +515,7 @@ pub fn Hnsw::search(
   if query.length() != self.dim {
     raise DimMismatch(self.dim, query.length())
   }
-  if self.count == 0 || k <= 0 {
+  if self.count == 0 || self.alive_count == 0 || k <= 0 {
     return []
   }
   let q : FixedArray[Float] = FixedArray::make(self.dim, 0.0)
