@@ -14,6 +14,11 @@ pub suberror HnswError {
 pub fn HnswError::message(Self) -> String
 
 // Types and methods
+pub struct CompactResult {
+  index : Hnsw
+  mapping : FixedArray[Int32]
+}
+
 pub(all) enum Distance {
   L2
   InnerProduct
@@ -39,6 +44,7 @@ pub struct Hnsw {
   mut rng_state : UInt64
 }
 pub fn Hnsw::add(Self, FixedArray[Float]) -> Int32 raise HnswError
+pub fn Hnsw::compact(Self) -> CompactResult raise HnswError
 pub fn Hnsw::contains(Self, Int32) -> Bool
 pub fn Hnsw::delete(Self, Int32) -> Unit raise HnswError
 pub fn Hnsw::get_vector(Self, Int32) -> FixedArray[Float] raise HnswError

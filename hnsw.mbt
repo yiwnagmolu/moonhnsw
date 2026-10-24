@@ -235,6 +235,36 @@ pub fn Hnsw::stats(self : Hnsw) -> HnswStats {
 }
 
 ///|
+/// Result of compacting an index.
+pub struct CompactResult {
+  /// The rebuilt index, containing only non-deleted vectors.
+  index : Hnsw
+  /// `mapping[old_id]` is the vector's new id in `index`, or -1 when the
+  /// vector was deleted.
+  mapping : FixedArray[Int32]
+}
+
+///|
+/// Rebuilds the index without tombstones, reclaiming the space of deleted
+/// vectors.
+///
+/// The new index uses the same parameters and seed; surviving vectors keep
+/// their relative insertion order and receive consecutive new ids described
+/// by `mapping`. The original index is left untouched.
+pub fn Hnsw::compact(self : Hnsw) -> CompactResult raise HnswError {
+  let fresh = Hnsw::new(self.dim, self.distance, params=self.params)
+  let mapping : FixedArray[Int32] = FixedArray::make(self.count, -1)
+  for id in 0..<self.count {
+    if self.alive[id] {
+      let v : FixedArray[Float] = FixedArray::make(self.dim, 0.0)
+      FixedArray::unsafe_blit(v, 0, self.vectors, id * self.dim, self.dim)
+      mapping[id] = fresh.add(v)
+    }
+  }
+  { index: fresh, mapping, }
+}
+
+///|
 /// Deletes the vector with the given id using tombstone semantics.
 ///
 /// The node stays in the graph (preserving connectivity and the id space)

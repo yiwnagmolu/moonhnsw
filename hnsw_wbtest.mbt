@@ -629,3 +629,53 @@ test "stats on empty and partially deleted indexes" {
   assert_eq(s.count, 2)
   assert_eq(s.nodes_per_level[0], 2)
 }
+
+///|
+test "compact reclaims deleted space and preserves neighbors" {
+  let n = 150
+  let dim = 8
+  let data = gen_dataset(81UL, n, dim, 0.0, 1.0)
+  let idx = Hnsw::new(dim, L2)
+  for i in 0..<n {
+    let _ = idx.add(row_of(data, i, dim))
+  }
+  for dead in [5, 20, 60, 61, 62, 149] {
+    let _ = idx.delete(dead)
+  }
+  let result = idx.compact()
+  let fresh = result.index
+  let mapping = result.mapping
+  assert_eq(mapping.length(), n)
+  // Dead ids map to -1; alive ids map onto consecutive new ids.
+  for dead in [5, 20, 60, 61, 62, 149] {
+    assert_eq(mapping[dead], -1)
+  }
+  assert_eq(fresh.size(), n - 6)
+  assert_eq(fresh.total(), n - 6)
+  // Top-1 neighbors agree between the original and compacted index.
+  let queries = gen_dataset(82UL, 5, dim, 0.0, 1.0)
+  for qi in 0..<5 {
+    let q = row_of(queries, qi, dim)
+    let old_top = idx.search(q, 1, ef=128)
+    if idx.contains(old_top[0].id) {
+      let new_top = fresh.search(q, 1, ef=128)
+      assert_eq(new_top[0].id, mapping[old_top[0].id])
+    }
+  }
+}
+
+///|
+test "compact of empty and fully deleted indexes" {
+  let idx = Hnsw::new(3, L2)
+  let empty = idx.compact()
+  assert_eq(empty.index.size(), 0)
+  assert_eq(empty.mapping.length(), 0)
+  let _ = idx.add(FixedArray::make(3, 1.0))
+  let _ = idx.add(FixedArray::make(3, 2.0))
+  let _ = idx.delete(0)
+  let _ = idx.delete(1)
+  let all_dead = idx.compact()
+  assert_eq(all_dead.index.size(), 0)
+  assert_eq(all_dead.mapping[0], -1)
+  assert_eq(all_dead.mapping[1], -1)
+}
