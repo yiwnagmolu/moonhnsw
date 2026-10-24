@@ -351,6 +351,20 @@ pub fn Hnsw::ids(self : Hnsw) -> Array[Int32] {
 }
 
 ///|
+/// Same payload as `save`, wrapped as an immutable `Bytes` value for
+/// convenient handling alongside other binary data.
+pub fn Hnsw::save_bytes(self : Hnsw) -> Bytes {
+  Bytes::from_array(self.save())
+}
+
+///|
+/// Restores an index from a `Bytes` payload produced by `save_bytes`.
+/// Raises `CorruptData` when the payload is truncated or inconsistent.
+pub fn Hnsw::load_bytes(data : Bytes) -> Hnsw raise HnswError {
+  Hnsw::load(data.to_fixedarray())
+}
+
+///|
 /// Deletes the vector with the given id using tombstone semantics.
 ///
 /// The node stays in the graph (preserving connectivity and the id space)

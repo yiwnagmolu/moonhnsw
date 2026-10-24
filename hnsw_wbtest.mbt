@@ -824,3 +824,35 @@ test "copy is independent and ids lists alive vectors" {
   }
   assert_true(alive[0] < alive[alive.length() - 1])
 }
+
+///|
+test "save_bytes and load_bytes roundtrip" {
+  let n = 30
+  let dim = 4
+  let data = gen_dataset(98UL, n, dim, 0.0, 1.0)
+  let idx = Hnsw::new(dim, L2)
+  for i in 0..<n {
+    let _ = idx.add_labeled(row_of(data, i, dim), (77 + i).to_uint64())
+  }
+  let _ = idx.delete(5)
+  let payload : Bytes = idx.save_bytes()
+  let restored = Hnsw::load_bytes(payload)
+  assert_eq(restored.size(), n - 1)
+  assert_eq(restored.total(), n)
+  let queries = gen_dataset(99UL, 3, dim, 0.0, 1.0)
+  for qi in 0..<3 {
+    let q = row_of(queries, qi, dim)
+    let a = idx.search(q, 5, ef=64)
+    let b = restored.search(q, 5, ef=64)
+    assert_eq(a.length(), b.length())
+    for j in 0..<a.length() {
+      assert_eq(a[j].id, b[j].id)
+      assert_eq(a[j].distance, b[j].distance)
+    }
+  }
+  for i in 0..<n {
+    if idx.contains(i) {
+      assert_eq(restored.label_of(i), (77 + i).to_uint64())
+    }
+  }
+}

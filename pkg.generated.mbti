@@ -55,8 +55,10 @@ pub fn Hnsw::get_vector(Self, Int32) -> FixedArray[Float] raise HnswError
 pub fn Hnsw::ids(Self) -> Array[Int32]
 pub fn Hnsw::label_of(Self, Int32) -> UInt64 raise HnswError
 pub fn Hnsw::load(FixedArray[Byte]) -> Self raise HnswError
+pub fn Hnsw::load_bytes(Bytes) -> Self raise HnswError
 pub fn Hnsw::new(Int32, Distance, params? : HnswParams) -> Self raise HnswError
 pub fn Hnsw::save(Self) -> FixedArray[Byte]
+pub fn Hnsw::save_bytes(Self) -> Bytes
 pub fn Hnsw::search(Self, FixedArray[Float], Int32, ef? : Int32) -> Array[Neighbor] raise HnswError
 pub fn Hnsw::search_radius(Self, FixedArray[Float], Double, max_results? : Int32) -> Array[Neighbor] raise HnswError
 pub fn Hnsw::size(Self) -> Int32
