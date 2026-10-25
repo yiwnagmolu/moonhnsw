@@ -922,3 +922,36 @@ test "Neighbor and HnswStats render to JSON" {
     _ => abort("expected a JSON object")
   }
 }
+
+///|
+test "export_dot renders nodes, edges and deletion styling" {
+  let dim = 4
+  let data = gen_dataset(111UL, 12, dim, 0.0, 1.0)
+  let idx = Hnsw::new(dim, L2)
+  for i in 0..<12 {
+    let _ = idx.add_labeled(row_of(data, i, dim), (900 + i).to_uint64())
+  }
+  let _ = idx.delete(3)
+  let dot = idx.export_dot(0)
+  assert_true(dot.contains("digraph moonhnsw_layer0"))
+  // Every node appears with its label; the deleted one is dashed.
+  for i in 0..<12 {
+    assert_true(dot.contains("n\{i} [label=\"\{i} (label \{900 + i})\""))
+  }
+  assert_true(dot.contains("style=dashed"))
+  assert_true(dot.contains("-> "))
+  // The top layer renders too, whatever its height.
+  let top = idx.export_dot(idx.max_level)
+  assert_true(top.contains("digraph moonhnsw_layer\{idx.max_level}"))
+  // Out-of-range layers raise.
+  let bad_low : Result[String, HnswError] = Ok(idx.export_dot(-1)) catch {
+    e => Err(e)
+  }
+  assert_true(bad_low is Err(_))
+  let bad_high : Result[String, HnswError] = Ok(
+    idx.export_dot(idx.max_level + 1),
+  ) catch {
+    e => Err(e)
+  }
+  assert_true(bad_high is Err(_))
+}

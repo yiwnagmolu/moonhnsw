@@ -434,6 +434,37 @@ pub fn Hnsw::verify(self : Hnsw) -> Unit raise HnswError {
 }
 
 ///|
+/// Exports one graph layer in Graphviz DOT format for visualization and
+/// debugging (render with e.g. `dot -Tsvg layers.dot -o layers.svg`).
+///
+/// Nodes carry their id and user label; deleted nodes are drawn dashed.
+/// Edges are directed exactly as stored in the graph.
+pub fn Hnsw::export_dot(self : Hnsw, layer : Int32) -> String raise HnswError {
+  if layer < 0 || layer > self.max_level {
+    raise InvalidParams("layer must be within 0..=\{self.max_level}")
+  }
+  let b = StringBuilder()
+  b.write_string("digraph moonhnsw_layer\{layer} {\n  rankdir=\"LR\";\n")
+  for id in 0..<self.count {
+    if self.links[id].length() > layer {
+      let style = if self.alive[id] { "" } else { ", style=dashed" }
+      b.write_string(
+        "  n\{id} [label=\"\{id} (label \{self.labels[id]})\"\{style}];\n",
+      )
+    }
+  }
+  for id in 0..<self.count {
+    if self.links[id].length() > layer {
+      for e in self.links[id][layer] {
+        b.write_string("  n\{id} -> n\{e};\n")
+      }
+    }
+  }
+  b.write_string("}\n")
+  b.to_string()
+}
+
+///|
 /// Deletes the vector with the given id using tombstone semantics.
 ///
 /// The node stays in the graph (preserving connectivity and the id space)
