@@ -8,7 +8,7 @@ Feed in `f32` vectors, get back the approximate top-k nearest neighbors. No FFI,
 
 - **HNSW graph index** with incremental `add`, deterministic `search(top-k)`, approximate `search_radius`, and binary `save` / `load`.
 - **Tombstone deletion**: `delete(id)` hides vectors from all searches while keeping the graph connected; `compact()` rebuilds a tombstone-free index and hands you an old-id → new-id mapping.
-- **Introspection**: `stats()` reports per-layer node counts, average degree and a rough memory estimate; `get_vector(id)` and `contains(id)` expose the stored data.
+- **Introspection**: `stats()` reports per-layer node counts, average degree and a rough memory estimate; `get_vector(id)` and `contains(id)` expose the stored data; `export_dot(layer)` renders any layer as Graphviz DOT; `Neighbor` and `HnswStats` derive `Eq` / `Debug` / `ToJson`, so results drop straight into assertions, logs and JSON pipelines.
 - **External labels**: `add_labeled(vector, label)` tags each vector with a `UInt64` key (a document or chunk id); labels persist through `save` / `load` and `compact`.
 - **Composable**: `absorb()` merges another index (keeping labels), `copy()` deep-clones, and `save_bytes()` / `load_bytes()` wrap the payload as `Bytes` for binary pipelines.
 - **Three metrics** with a smaller-is-closer convention: `L2` (squared Euclidean), `InnerProduct` (negated dot product), `Cosine` (vectors normalized once on insertion).
@@ -63,6 +63,7 @@ moon add yiwnagmolu/moonhnsw
 | `Hnsw::absorb(other) -> FixedArray[Int]` | Merge another index's live vectors (labels kept); returns old-id → new-id mapping. |
 | `Hnsw::copy() -> Hnsw` | Independent deep clone, tombstones and labels included. |
 | `Hnsw::ids() -> Array[Int]` | Ascending ids of all non-deleted vectors. |
+| `Hnsw::export_dot(layer) -> String` | Graphviz DOT of one graph layer, for visualization. |
 | `Hnsw::save() -> FixedArray[Byte]` | Serialize the full index. |
 | `Hnsw::load(bytes) -> Hnsw` | Restore an index; rejects malformed payloads with `CorruptData`. |
 | `Hnsw::save_bytes() / load_bytes(Bytes)` | Same payload wrapped as immutable `Bytes`. |
