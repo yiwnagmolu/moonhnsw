@@ -1075,3 +1075,43 @@ test "filtered search returns only matching vectors" {
     assert_true(r.id != 6)
   }
 }
+
+///|
+test "v4 payload checksum detects bit flips" {
+  let n = 50
+  let dim = 8
+  let data = gen_dataset(141UL, n, dim, 0.0, 1.0)
+  let idx = Hnsw::new(dim, L2)
+  for i in 0..<n {
+    let _ = idx.add(row_of(data, i, dim))
+  }
+  let bytes = idx.save()
+  // Flip one byte in the middle of the payload.
+  let flipped : FixedArray[Byte] = FixedArray::make(bytes.length(), b'\x00')
+  FixedArray::unsafe_blit(flipped, 0, bytes, 0, bytes.length())
+  let mid = bytes.length() / 2
+  flipped[mid] = (flipped[mid].to_int() ^ 0xFF).to_byte()
+  let bad : Result[Hnsw, HnswError] = Ok(Hnsw::load(flipped)) catch {
+    e => Err(e)
+  }
+  match bad {
+    // The flip may trip an earlier field check or the trailer; either way
+    // the payload must be rejected.
+    Err(CorruptData(_)) => ()
+    _ => abort("expected the flipped payload to be rejected")
+  }
+  // Flipping a checksum byte itself must report the checksum specifically.
+  let flipped_crc : FixedArray[Byte] = FixedArray::make(bytes.length(), b'\x00')
+  FixedArray::unsafe_blit(flipped_crc, 0, bytes, 0, bytes.length())
+  let last = bytes.length() - 1
+  flipped_crc[last] = (flipped_crc[last].to_int() ^ 0xFF).to_byte()
+  let bad_crc : Result[Hnsw, HnswError] = Ok(Hnsw::load(flipped_crc)) catch {
+    e => Err(e)
+  }
+  match bad_crc {
+    Err(CorruptData(msg)) => assert_true(msg.contains("checksum"))
+    _ => abort("expected a checksum mismatch")
+  }
+  // The untouched payload still loads and verifies.
+  Hnsw::load(bytes).verify()
+}

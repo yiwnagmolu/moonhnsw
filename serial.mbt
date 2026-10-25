@@ -140,7 +140,7 @@ pub fn Hnsw::save(self : Hnsw) -> FixedArray[Byte] {
   b.put_byte(b'N')
   b.put_byte(b'S')
   b.put_byte(b'W')
-  b.put_byte(b'\x03')
+  b.put_byte(b'\x04')
   b.put_u32(self.dim)
   b.put_byte(
     match self.distance {
@@ -179,6 +179,9 @@ pub fn Hnsw::save(self : Hnsw) -> FixedArray[Byte] {
       }
     }
   }
+  // v4 trailer: CRC-32 over everything above, so flipped bits and silent
+  // truncation are detected on load instead of surfacing as bad searches.
+  b.put_u32(crc32_of(b.buf, b.len).reinterpret_as_int())
   b.to_fixed()
 }
 
@@ -190,7 +193,7 @@ pub fn Hnsw::load(data : FixedArray[Byte]) -> Hnsw raise HnswError {
   let r = ByteReader::new(data)
   read_magic(r)
   let version = r.byte()
-  if version != 1 && version != 2 && version != 3 {
+  if version != 1 && version != 2 && version != 3 && version != 4 {
     raise CorruptData("unsupported format version \{version}")
   }
   let dim = r.u32()
@@ -290,6 +293,14 @@ pub fn Hnsw::load(data : FixedArray[Byte]) -> Hnsw raise HnswError {
       node.push(lst)
     }
     links.push(node)
+  }
+  // v4 payloads end with a CRC-32 over every preceding byte.
+  if version >= 4 {
+    let body_crc = crc32_of(r.data, r.pos)
+    let stored = r.u32()
+    if stored != body_crc.reinterpret_as_int() {
+      raise CorruptData("checksum mismatch")
+    }
   }
   let visited_len = if count < 64 { 64 } else { count }
   {
