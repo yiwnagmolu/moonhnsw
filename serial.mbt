@@ -63,6 +63,42 @@ fn ByteBuf::put_f32(self : ByteBuf, v : Float) -> Unit {
 }
 
 ///|
+/// Appends `count` f32 values in one bounds-checked pass.
+fn ByteBuf::put_f32_bulk(
+  self : ByteBuf,
+  src : FixedArray[Float],
+  count : Int32,
+) -> Unit {
+  self.ensure(count * 4)
+  let mut i = 0
+  while i < count {
+    let bits = src.unsafe_get(i).reinterpret_as_uint()
+    self.buf[self.len] = bits.to_byte()
+    self.buf[self.len + 1] = (bits >> 8).to_byte()
+    self.buf[self.len + 2] = (bits >> 16).to_byte()
+    self.buf[self.len + 3] = (bits >> 24).to_byte()
+    self.len += 4
+    i += 1
+  }
+}
+
+///|
+/// Appends `count` bytes in one bounds-checked pass.
+fn ByteBuf::put_bytes_bulk(
+  self : ByteBuf,
+  src : FixedArray[Byte],
+  count : Int32,
+) -> Unit {
+  self.ensure(count)
+  let mut i = 0
+  while i < count {
+    self.buf[self.len + i] = src.unsafe_get(i)
+    i += 1
+  }
+  self.len += count
+}
+
+///|
 fn ByteBuf::to_fixed(self : ByteBuf) -> FixedArray[Byte] {
   let out : FixedArray[Byte] = FixedArray::make(self.len, b'\x00')
   FixedArray::unsafe_blit(out, 0, self.buf, 0, self.len)
@@ -115,6 +151,48 @@ fn ByteReader::u64(self : ByteReader) -> UInt64 raise HnswError {
 fn ByteReader::f32(self : ByteReader) -> Float raise HnswError {
   let bits = self.u32()
   Float::reinterpret_from_int(bits)
+}
+
+///|
+/// Reads `count` f32 values in one bounds-checked pass into `dst`.
+fn ByteReader::f32_bulk(
+  self : ByteReader,
+  dst : FixedArray[Float],
+  count : Int32,
+) -> Unit raise HnswError {
+  if self.pos + count * 4 > self.data.length() {
+    raise CorruptData("unexpected end of data")
+  }
+  let mut i = 0
+  while i < count {
+    let b0 = self.data.unsafe_get(self.pos).to_int() & 0xFF
+    let b1 = self.data.unsafe_get(self.pos + 1).to_int() & 0xFF
+    let b2 = self.data.unsafe_get(self.pos + 2).to_int() & 0xFF
+    let b3 = self.data.unsafe_get(self.pos + 3).to_int() & 0xFF
+    dst[i] = Float::reinterpret_from_int(
+      b0 | (b1 << 8) | (b2 << 16) | (b3 << 24),
+    )
+    self.pos += 4
+    i += 1
+  }
+}
+
+///|
+/// Reads `count` bytes in one bounds-checked pass into `dst`.
+fn ByteReader::bytes_bulk(
+  self : ByteReader,
+  dst : FixedArray[Byte],
+  count : Int32,
+) -> Unit raise HnswError {
+  if self.pos + count > self.data.length() {
+    raise CorruptData("unexpected end of data")
+  }
+  let mut i = 0
+  while i < count {
+    dst[i] = self.data.unsafe_get(self.pos + i)
+    i += 1
+  }
+  self.pos += count
 }
 
 ///|
@@ -192,17 +270,9 @@ pub fn Hnsw::save(self : Hnsw) -> FixedArray[Byte] {
   }
   let total = self.count * self.dim
   if self.q_active() {
-    let mut i = 0
-    while i < total {
-      b.put_byte(self.quants.unsafe_get(i))
-      i += 1
-    }
+    b.put_bytes_bulk(self.quants, total)
   } else {
-    let mut i = 0
-    while i < total {
-      b.put_f32(self.vectors.unsafe_get(i))
-      i += 1
-    }
+    b.put_f32_bulk(self.vectors, total)
   }
   for node in self.links {
     b.put_u32(node.length())
@@ -347,17 +417,9 @@ pub fn Hnsw::load(data : FixedArray[Byte]) -> Hnsw raise HnswError {
     FixedArray::make(0, 0)
   }
   if quantized {
-    let mut i = 0
-    while i < total {
-      quants[i] = r.byte().to_byte()
-      i += 1
-    }
+    r.bytes_bulk(quants, total)
   } else {
-    let mut i = 0
-    while i < total {
-      vectors[i] = r.f32()
-      i += 1
-    }
+    r.f32_bulk(vectors, total)
   }
   let links : Array[Array[Array[Int32]]] = []
   for _ in 0..<count {
