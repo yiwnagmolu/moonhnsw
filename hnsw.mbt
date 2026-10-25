@@ -58,6 +58,16 @@ pub suberror HnswError {
 }
 
 ///|
+/// `Show` renders the same human-readable text as `message`, so errors print
+/// directly: `println("failed: \{err}")`.
+pub impl Show for HnswError with fn output(self, logger) {
+  logger.write_string(self.message())
+}
+
+///|
+pub extend HnswError with Show::{to_string, output}
+
+///|
 /// Human-readable description of the error.
 pub fn HnswError::message(self : HnswError) -> String {
   match self {
@@ -82,6 +92,19 @@ pub extend Neighbor with Eq::{not_equal, equal}
 
 ///|
 pub extend Neighbor with @moonbitlang/core/debug.Debug::{to_repr}
+
+///|
+/// `Show` prints a compact `Neighbor(id, distance)` form for quick logging.
+pub impl Show for Neighbor with fn output(self, logger) {
+  logger.write_string("Neighbor(")
+  logger.write_object(self.id)
+  logger.write_string(", ")
+  logger.write_object(self.distance)
+  logger.write_string(")")
+}
+
+///|
+pub extend Neighbor with Show::{to_string, output}
 
 ///|
 pub extend Neighbor with ToJson::{to_json}

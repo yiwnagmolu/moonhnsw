@@ -1501,3 +1501,14 @@ test "distance_computations reports sub-linear search work" {
   let _ = idx.search(q, 1, ef=1)
   assert_true(idx.distance_computations() < wide)
 }
+
+///|
+test "Show renders errors and neighbors for direct interpolation" {
+  let err : HnswError = DimMismatch(4, 3)
+  let text = "\{err}"
+  assert_eq(text, err.message())
+  let n : Neighbor = { id: 7, distance: 0.5, }
+  let ntext = "\{n}"
+  assert_true(ntext.contains("Neighbor("))
+  assert_true(ntext.contains("7"))
+}
