@@ -4,6 +4,21 @@ All notable changes to moonhnsw are documented here. Releases are tagged in
 the repository; the binary serialization format stays backward compatible
 (newer loaders accept older payloads).
 
+## 0.9.1 — 2026-10-25
+
+### Added
+
+- The benchmark now measures persistence round-trips and payload sizes.
+  Baseline on wasm-gc: 10k x 32d L2 saves 2.39 MB in 100.5 ms and loads in
+  91.4 ms; SQ8 stores 0.30 MB and round-trips in ~12 ms at 2k.
+
+### Changed
+
+- Labels serialize through a bulk u64 pass (one capacity check per run
+  instead of eight per label). At 10k labels the effect is below noise -
+  80 KB of a 2.39 MB payload - but it removes the last per-element
+  serialization loop.
+
 ## 0.9.0 — 2026-10-25
 
 ### Added
