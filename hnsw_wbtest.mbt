@@ -1287,3 +1287,87 @@ test "search_batch matches per-query searches" {
     assert_eq(batched[qi], idx.search(qs[qi], 5, ef=64))
   }
 }
+
+///|
+test "randomized operations keep invariants and match brute force" {
+  let dim = 4
+  let idx = Hnsw::new(
+    dim,
+    L2,
+    params=HnswParams::new(m=8, ef_construction=64, seed=171UL),
+  )
+  let pool = gen_dataset(181UL, 200, dim, 0.0, 1.0)
+  let alive_mirror : Array[Bool] = Array::make(200, false)
+  let mut next_add = 0
+  let rng = TestRng::new(180UL)
+  // Phase 1: plain adds.
+  for _ in 0..<60 {
+    let _ = idx.add(row_of(pool, next_add, dim))
+    alive_mirror[next_add] = true
+    next_add += 1
+  }
+  // Phase 2: mixed adds, deletes and checked searches.
+  for step in 0..<120 {
+    let roll = rng.next_f64()
+    if roll < 0.5 && next_add < 200 {
+      let _ = idx.add(row_of(pool, next_add, dim))
+      alive_mirror[next_add] = true
+      next_add += 1
+    } else if roll < 0.8 {
+      let target = (rng.next_f64() * next_add.to_double()).to_int()
+      if target < next_add && alive_mirror[target] {
+        let _ = idx.delete(target)
+        alive_mirror[target] = false
+      }
+    } else {
+      let q = row_of(
+        pool,
+        (rng.next_f64() * next_add.to_double()).to_int(),
+        dim,
+      )
+      let res = idx.search(q, 5, ef=64)
+      for r in res {
+        assert_true(r.id >= 0 && r.id < next_add && alive_mirror[r.id])
+      }
+      // The nearest result must sit inside the exact top-5 over the alive
+      // mirror.
+      let dists : Array[(Double, Int32)] = []
+      for i in 0..<next_add {
+        if alive_mirror[i] {
+          dists.push((distance_between(L2, q, 0, pool, i * dim, dim), i))
+        }
+      }
+      let _ = sort_pairs_ascending(dists)
+      let truth_n = if dists.length() < 5 { dists.length() } else { 5 }
+      if truth_n > 0 && res.length() > 0 {
+        let mut ok = false
+        for t in 0..<truth_n {
+          if res[0].id == dists[t].1 {
+            ok = true
+          }
+        }
+        assert_true(ok)
+      }
+    }
+    if step % 16 == 0 {
+      idx.verify()
+    }
+  }
+  idx.verify()
+  // Final bookkeeping agrees with the mirror on every axis.
+  let mut alive_total = 0
+  for i in 0..<200 {
+    if alive_mirror[i] {
+      alive_total += 1
+    }
+  }
+  assert_eq(idx.size(), alive_total)
+  assert_eq(idx.total(), next_add)
+  let ids = idx.ids()
+  assert_eq(ids.length(), alive_total)
+  for id in ids {
+    assert_true(alive_mirror[id])
+  }
+  // The surviving index still round-trips.
+  Hnsw::load(idx.save()).verify()
+}
