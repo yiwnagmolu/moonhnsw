@@ -4,6 +4,19 @@ All notable changes to moonhnsw are documented here. Releases are tagged in
 the repository; the binary serialization format stays backward compatible
 (newer loaders accept older payloads).
 
+## 0.8.1 — 2026-10-25
+
+### Changed
+
+- L2/IP searches walk the caller's query array directly (only Cosine pays
+  for a normalized copy) and the traversal heaps reuse backing arrays
+  drained on return; the candidate heap is emptied in place, a subtlety the
+  stress test caught on the first cut. Measured: InnerProduct build
+  1365 -> 1175 ms on the wasm-gc benchmark.
+- The link section of a payload - the dominant part of large graphs -
+  serializes and loads through bulk u32 helpers with one capacity check per
+  run instead of per integer. Byte layout unchanged.
+
 ## 0.8.0 — 2026-10-25
 
 ### Added
