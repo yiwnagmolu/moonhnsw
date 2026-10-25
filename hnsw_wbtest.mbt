@@ -955,3 +955,75 @@ test "export_dot renders nodes, edges and deletion styling" {
   }
   assert_true(bad_high is Err(_))
 }
+
+///|
+test "recall on clustered data" {
+  // Three tight blobs in 8 dimensions: real embeddings are clustered, not
+  // uniform, so the graph must stay navigable here too.
+  let n = 300
+  let dim = 8
+  let crng = TestRng::new(120UL)
+  let centers : FixedArray[Float] = FixedArray::make(3 * dim, 0.0)
+  for i in 0..<(3 * dim) {
+    centers[i] = Float::from_double(crng.next_f64() * 10.0)
+  }
+  let rng = TestRng::new(121UL)
+  let data : FixedArray[Float] = FixedArray::make(n * dim, 0.0)
+  for i in 0..<n {
+    let c = i % 3 * dim
+    let off = i * dim
+    for j in 0..<dim {
+      // Sum of three uniforms approximates a gaussian offset.
+      let g = (rng.next_f64() + rng.next_f64() + rng.next_f64() - 1.5) * 0.4
+      data[off + j] = Float::from_double(centers[c + j].to_double() + g)
+    }
+  }
+  let idx = Hnsw::new(dim, L2)
+  for i in 0..<n {
+    let _ = idx.add(row_of(data, i, dim))
+  }
+  let queries = gen_dataset(122UL, 20, dim, 0.0, 10.0)
+  let mut hits = 0
+  for qi in 0..<20 {
+    let q = row_of(queries, qi, dim)
+    let res = idx.search(q, 10, ef=100)
+    let truth = brute_topk(L2, data, n, dim, q, 10)
+    for r in res {
+      for t in truth {
+        if r.id == t {
+          hits += 1
+          break
+        }
+      }
+    }
+  }
+  assert_true(hits.to_double() / 200.0 >= 0.9)
+}
+
+///|
+test "construction after load matches the original index" {
+  // rng_state is persisted, so a loaded index must build the identical graph
+  // when fed the same insertions.
+  let dim = 8
+  let data = gen_dataset(123UL, 40, dim, 0.0, 1.0)
+  let idx = Hnsw::new(dim, L2, params=HnswParams::new(seed=777UL))
+  for i in 0..<40 {
+    let _ = idx.add(row_of(data, i, dim))
+  }
+  let loaded = Hnsw::load(idx.save())
+  let extra = gen_dataset(124UL, 10, dim, 0.0, 1.0)
+  for i in 0..<10 {
+    let v = row_of(extra, i, dim)
+    assert_eq(loaded.add(v), idx.add(v))
+  }
+  assert_eq(loaded.max_level, idx.max_level)
+  assert_eq(loaded.entry, idx.entry)
+  // And both answer searches identically.
+  let queries = gen_dataset(125UL, 5, dim, 0.0, 1.0)
+  for qi in 0..<5 {
+    assert_eq(
+      idx.search(row_of(queries, qi, dim), 5, ef=64),
+      loaded.search(row_of(queries, qi, dim), 5, ef=64),
+    )
+  }
+}
