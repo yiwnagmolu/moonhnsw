@@ -4,6 +4,20 @@ All notable changes to moonhnsw are documented here. Releases are tagged in
 the repository; the binary serialization format stays backward compatible
 (newer loaders accept older payloads).
 
+## 0.8.0 — 2026-10-25
+
+### Added
+
+- `Hnsw::upsert_labeled(vector, label)`: insert-or-replace by business key —
+  re-embed a document, then upsert; replaced vectors are tombstoned and stay
+  reclaimable via `compact`.
+- `Hnsw::find_by_label(label)`: reverse id lookup for a label (labels may
+  repeat).
+- `Hnsw::search_batch(queries, k, ef)`: one call for a list of queries.
+- A 180-step randomized-operation stress test: adds, deletes and checked
+  searches with `verify()` and brute-force nearest-neighbor agreement
+  throughout.
+
 ## 0.7.1 — 2026-10-25
 
 ### Changed

@@ -64,6 +64,9 @@ moon add yiwnagmolu/moonhnsw
 | `Hnsw::add(vector) -> Int` | Insert one vector, returns its id. Raises on dimension mismatch. |
 | `Hnsw::add_labeled(vector, label) -> Int` | Insert tagged with a `UInt64` label of your choice (need not be unique). |
 | `Hnsw::label_of(id) -> UInt64` | Label stored for an id; defaults to the id itself. |
+| `Hnsw::upsert_labeled(vector, label) -> Int` | Insert-or-replace by label: the document-update flow. |
+| `Hnsw::find_by_label(label) -> Array[Int]` | Ids carrying a label (labels may repeat). |
+| `Hnsw::search_batch(queries, k, ef~)` | One call for a list of queries. |
 | `Hnsw::search(query, k, ef~ = 64) -> Array[Neighbor]` | Approximate top-k, sorted by distance ascending. |
 | `Hnsw::search_filtered(query, k, ef~, filter)` | Top-k restricted by a filter closure over ids (metadata filtering). |
 | `Hnsw::search_mmr(query, k, lambda~, ef~)` | Maximal Marginal Relevance re-ranking for diverse results. |
