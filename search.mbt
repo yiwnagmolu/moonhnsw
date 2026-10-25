@@ -116,16 +116,21 @@ fn Hnsw::search_layer(
 ) -> Array[(Double, Int32)] {
   let stamp = self.next_stamp()
   let visited = self.visited
+  // Hoist the mutable field loads out of the per-hop loops; nothing in this
+  // function mutates them, and dist_query only touches distance state.
+  let alive = self.alive
+  let links = self.links
+  let count = self.count
   // Reuse the heap backing stores: to_sorted_ascending drains them, so they
   // come back empty and keep their grown capacity.
   let candidates = Heap::{ items: self.cand_items, is_min: true, }
   let results = Heap::{ items: self.result_items, is_min: false, }
   let seeds : Array[Int32] = []
   for (d, e) in eps {
-    if e >= 0 && e < self.count && visited[e] != stamp {
+    if e >= 0 && e < count && visited[e] != stamp {
       visited[e] = stamp
       candidates.push(d, e)
-      if d <= cutoff && (include_dead || self.alive[e]) && accept(e) {
+      if d <= cutoff && (include_dead || alive[e]) && accept(e) {
         results.push(d, e)
       }
       seeds.push(e)
@@ -133,12 +138,12 @@ fn Hnsw::search_layer(
   }
   // Expand the entry points once unconditionally.
   for e in seeds {
-    for nb in self.links[e][layer] {
+    for nb in links[e][layer] {
       if visited[nb] != stamp {
         visited[nb] = stamp
         let d = self.dist_query(q, nb)
         candidates.push(d, nb)
-        if d <= cutoff && (include_dead || self.alive[nb]) && accept(nb) {
+        if d <= cutoff && (include_dead || alive[nb]) && accept(nb) {
           results.push(d, nb)
         }
       }
@@ -156,13 +161,13 @@ fn Hnsw::search_layer(
       break
     }
     let _ = candidates.pop()
-    for e in self.links[c.1][layer] {
+    for e in links[c.1][layer] {
       if visited[e] != stamp {
         visited[e] = stamp
         let d = self.dist_query(q, e)
         if d <= cutoff && (results.size() < ef || d < results.top().0) {
           candidates.push(d, e)
-          if (include_dead || self.alive[e]) && accept(e) {
+          if (include_dead || alive[e]) && accept(e) {
             results.push(d, e)
             if results.size() > ef {
               let _ = results.pop()
