@@ -6,12 +6,23 @@ pure MoonBit HNSW approximate nearest-neighbor search library (module
 
 ## Project Structure
 
-- The library lives in the root package: the HNSW graph and public API
-  (`hnsw.mbt`), binary serialization (`serial.mbt`), the deterministic
-  SplitMix64 PRNG (`rng.mbt`) and the internal binary heap (`heap.mbt`).
+- The library lives in the root package, split by topic:
+  - `hnsw.mbt` — types (`Distance`, `HnswParams`, `HnswError`, `Neighbor`,
+    `HnswStats`, the `Hnsw` struct), the constructor and accessors.
+  - `insert.mbt` — insertion paths, vector capacity growth, level draws.
+  - `search.mbt` — the query family (top-k, filtered, radius, MMR, batch)
+    plus beam traversal and neighbor selection.
+  - `lifecycle.mbt` — delete, compact, absorb, copy, shrink_to_fit, verify
+    and DOT export.
+  - `distance.mbt` — metric helpers and the f32 distance kernels.
+  - `quant.mbt` — SQ8 scalar quantization (bounds, freeze, byte distances).
+  - `serial.mbt` — binary serialization (format v5, CRC-32 trailer).
+  - `crc.mbt` — the IEEE CRC-32 kernel.
+  - `rng.mbt` — the SplitMix64 level-draw generator.
+  - `heap.mbt` — the internal binary heap.
 - `hnsw_wbtest.mbt` holds whitebox tests (internal helpers, brute-force
-  recall harness, tamper tests); `api_test.mbt` holds blackbox tests that
-  exercise the package the way an external user would, with
+  recall harness, tamper and stress tests); `api_test.mbt` holds blackbox
+  tests that exercise the package the way an external user would, with
   package-qualified names.
 - `examples/benchmark` runs in CI as a smoke test; `examples/benchmark-large`
   (100k vectors) is for occasional manual runs only — never add it to CI.
@@ -39,10 +50,12 @@ pure MoonBit HNSW approximate nearest-neighbor search library (module
   always checked against brute-force ground truth, and deterministic seeds
   keep the tests reproducible.
 
-## Serialization format (v3)
+## Serialization format (v5)
 
 Little-endian: magic `MHNSW`, u8 version, u32 dim, u8 metric, u32 `m`, u32
 `ef_construction`, u64 seed, i32 entry, i32 max_level, u32 count, u64 rng
-state, one alive byte per vector, one u64 label per vector, `count * dim`
-f32 vector values, then per node the per-layer link lists. Newer loaders
-must keep accepting older payload versions.
+state, one alive byte per vector, one u64 label per vector, u8 storage code
+(and for SQ8: frozen flag + per-dimension min/max/scale), the vector values
+(f32, or one byte per dimension when frozen), then per node the per-layer
+link lists; v4+ payloads end with a CRC-32 over every preceding byte.
+Newer loaders must keep accepting older payload versions.

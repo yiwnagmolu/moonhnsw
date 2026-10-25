@@ -4,6 +4,15 @@ All notable changes to moonhnsw are documented here. Releases are tagged in
 the repository; the binary serialization format stays backward compatible
 (newer loaders accept older payloads).
 
+## 0.9.2 — 2026-10-26
+
+### Changed
+
+- `hnsw.mbt` (1450 lines) split block-for-block into topic files: insert,
+  search, lifecycle, distance, with hnsw.mbt keeping types, the constructor
+  and accessors. No behavior change; the full suite, generated interface and
+  formatting are identical. AGENTS.md documents the new layout.
+
 ## 0.9.1 — 2026-10-25
 
 ### Added
