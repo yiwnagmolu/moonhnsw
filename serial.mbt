@@ -120,6 +120,28 @@ fn ByteBuf::put_i32_bulk(
 }
 
 ///|
+/// Appends `count` little-endian u64 values from `src` in one
+/// bounds-checked pass.
+fn ByteBuf::put_u64_bulk(
+  self : ByteBuf,
+  src : Array[UInt64],
+  count : Int32,
+) -> Unit {
+  self.ensure(count * 8)
+  let mut i = 0
+  while i < count {
+    let v = src.unsafe_get(i)
+    let mut b = 0
+    while b < 8 {
+      self.buf[self.len + i * 8 + b] = (v >> (b * 8)).to_byte()
+      b += 1
+    }
+    i += 1
+  }
+  self.len += count * 8
+}
+
+///|
 fn ByteBuf::to_fixed(self : ByteBuf) -> FixedArray[Byte] {
   let out : FixedArray[Byte] = FixedArray::make(self.len, b'\x00')
   FixedArray::unsafe_blit(out, 0, self.buf, 0, self.len)
@@ -283,9 +305,7 @@ pub fn Hnsw::save(self : Hnsw) -> FixedArray[Byte] {
     b.put_byte(if self.alive[i] { b'\x01' } else { b'\x00' })
     i += 1
   }
-  for lbl in self.labels {
-    b.put_u64(lbl)
-  }
+  b.put_u64_bulk(self.labels, self.labels.length())
   // v5: storage precision. SQ8 stores its bounds and, once frozen, one byte
   // per dimension instead of full floats.
   b.put_byte(
