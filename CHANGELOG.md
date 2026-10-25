@@ -4,6 +4,21 @@ All notable changes to moonhnsw are documented here. Releases are tagged in
 the repository; the binary serialization format stays backward compatible
 (newer loaders accept older payloads).
 
+## 0.10.1 — 2026-10-26
+
+### Added
+
+- `Show` for `HnswError` (renders `message()`) and `Neighbor` (compact
+  `Neighbor(id, distance)`), so errors and results print through string
+  interpolation directly. `derive(Show)` is deprecated in this toolchain;
+  the impls are hand-written with explicit extend promotions.
+
+### Changed
+
+- Hot-loop field loads (`alive`, `links`, `count`) hoisted to locals in
+  `search_layer`; within noise on the benchmark, kept for the invariant it
+  documents. README gains version and license badges.
+
 ## 0.10.0 — 2026-10-26
 
 ### Added
