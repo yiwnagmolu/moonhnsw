@@ -102,7 +102,7 @@ pub struct Hnsw {
   params : HnswParams
   /// True when the metric pre-normalizes vectors (Cosine).
   normalize : Bool
-  /// 1 / ln(m) 鈥?level assignment factor.
+  /// 1 / ln(m) 閳?level assignment factor.
   level_mult : Double
   /// Id of the entry point, -1 when the index is empty.
   mut entry : Int32
@@ -138,6 +138,11 @@ pub struct Hnsw {
   mut q_frozen : Bool
   /// Reusable scratch for quantizing query vectors during search.
   q_scratch : FixedArray[Byte]
+  /// The query currently held in `q_scratch`; compared by reference so one
+  /// search quantizes its query once instead of per visited neighbor.
+  mut q_scratch_source : FixedArray[Float]
+  /// Sentinel used to invalidate `q_scratch_source` between operations.
+  q_scratch_reset : FixedArray[Float]
   /// Reusable scratch for the normalized copy of an inserted vector.
   f_scratch : FixedArray[Float]
   /// `links[node][layer]` is the neighbor id list of `node` on `layer`.
@@ -187,6 +192,8 @@ pub fn Hnsw::new(
     q_scales: FixedArray::make(dim, 1.0),
     q_frozen: false,
     q_scratch: FixedArray::make(dim, 0),
+    q_scratch_source: FixedArray::make(0, 0.0),
+    q_scratch_reset: FixedArray::make(0, 0.0),
     f_scratch: FixedArray::make(dim, 0.0),
     links: [],
     visited: FixedArray::make(0, 0),
@@ -214,7 +221,7 @@ pub fn Hnsw::contains(self : Hnsw, id : Int32) -> Bool {
 }
 
 ///|
-/// Returns the label stored for `id` 鈥?the id itself by default, or the
+/// Returns the label stored for `id` 閳?the id itself by default, or the
 /// value passed to `add_labeled`. Raises `InvalidId` for unknown or deleted
 /// ids.
 pub fn Hnsw::label_of(self : Hnsw, id : Int32) -> UInt64 raise HnswError {
@@ -635,11 +642,14 @@ fn Hnsw::next_stamp(self : Hnsw) -> Int32 {
 
 ///|
 /// Distance between a query slice and a stored vector. Under SQ8 the query
-/// is quantized into a reused scratch buffer and the distance runs over
-/// bytes.
+/// is quantized into a reused scratch buffer once per search (detected by
+/// reference identity) and the distance runs over bytes.
 fn Hnsw::dist_query(self : Hnsw, q : FixedArray[Float], id : Int32) -> Double {
   if self.q_active() {
-    self.quantize_into(q, 0, self.q_scratch, 0)
+    if !physical_equal(q, self.q_scratch_source) {
+      self.quantize_into(q, 0, self.q_scratch, 0)
+      self.q_scratch_source = q
+    }
     return self.dist_qq(self.q_scratch, 0, id * self.dim)
   }
   distance_between(self.distance, q, 0, self.vectors, id * self.dim, self.dim)
@@ -693,7 +703,7 @@ fn Hnsw::greedy_descent(
 /// distance, ascending.
 ///
 /// Deleted (tombstone) nodes are traversed for connectivity but excluded
-/// from the results, unless `include_dead` is set 鈥?index construction uses
+/// from the results, unless `include_dead` is set 閳?index construction uses
 /// that mode so new nodes stay linked into the graph even when their
 /// surroundings are deleted.
 ///
@@ -850,6 +860,7 @@ fn Hnsw::insert(
     raise DimMismatch(self.dim, vector.length())
   }
   let id = self.count
+  self.q_scratch_source = self.q_scratch_reset
   let off = id * self.dim
   // Normalize (when the metric needs it) into scratch, then store at the
   // active precision.
@@ -970,6 +981,7 @@ pub fn Hnsw::search(
     return []
   }
   let q : FixedArray[Float] = FixedArray::make(self.dim, 0.0)
+  self.q_scratch_source = self.q_scratch_reset
   let _ = copy_normalized(query, 0, q, 0, self.dim, self.normalize)
   let r = self.descend_entry(q)
   let width = if ef < k { k } else { ef }
@@ -989,7 +1001,7 @@ pub fn Hnsw::search(
 ///
 /// Traversal walks the graph as usual; only the result set is filtered, so
 /// with a highly selective filter the call may return fewer than `k` results
-/// even when more matches exist 鈥?raise `ef` to compensate. Filter closures
+/// even when more matches exist 閳?raise `ef` to compensate. Filter closures
 /// receive the internal id; combine with `label_of(id)` for label-based
 /// filtering. Deleted vectors never pass, regardless of the filter.
 pub fn Hnsw::search_filtered(
@@ -1006,6 +1018,7 @@ pub fn Hnsw::search_filtered(
     return []
   }
   let q : FixedArray[Float] = FixedArray::make(self.dim, 0.0)
+  self.q_scratch_source = self.q_scratch_reset
   let _ = copy_normalized(query, 0, q, 0, self.dim, self.normalize)
   let ep = self.descend_entry(q)
   let width = if ef < k { k } else { ef }
@@ -1117,6 +1130,7 @@ pub fn Hnsw::search_radius(
     raise InvalidParams("radius must be >= 0")
   }
   let q : FixedArray[Float] = FixedArray::make(self.dim, 0.0)
+  self.q_scratch_source = self.q_scratch_reset
   let _ = copy_normalized(query, 0, q, 0, self.dim, self.normalize)
   let ep = self.descend_entry(q)
   let cands = self.search_layer(q, [ep], max_results, 0, cutoff=radius)

@@ -425,6 +425,8 @@ pub fn Hnsw::load(data : FixedArray[Byte]) -> Hnsw raise HnswError {
     q_scales,
     q_frozen,
     q_scratch: FixedArray::make(dim, 0),
+    q_scratch_source: FixedArray::make(0, 0.0),
+    q_scratch_reset: FixedArray::make(0, 0.0),
     f_scratch: FixedArray::make(dim, 0.0),
     links,
     visited: FixedArray::make(visited_len, 0),
