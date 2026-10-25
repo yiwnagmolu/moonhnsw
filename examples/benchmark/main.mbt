@@ -161,6 +161,7 @@ fn bench_metric(
   m : Int32,
   ef_construction : Int32,
   seed : UInt64,
+  storage~ : @moonhnsw.Storage = @moonhnsw.Storage::Float32,
 ) -> Unit raise @moonhnsw.HnswError {
   println(
     "--- \{name}  n=\{n} dim=\{dim} queries=\{n_queries} k=\{k} m=\{m} ef_construction=\{ef_construction} ---",
@@ -184,12 +185,16 @@ fn bench_metric(
   let idx = @moonhnsw.Hnsw::new(
     dim,
     metric,
-    params=@moonhnsw.HnswParams::new(m~, ef_construction~),
+    params=@moonhnsw.HnswParams::new(m~, ef_construction~, storage~),
   )
   for i in 0..<n {
     let _ = idx.add(row_of(raw, i, dim))
   }
   let build_us = @bench.monotonic_clock_end(t0)
+  let s = idx.stats()
+  println(
+    "memory          : \{fmt2(s.estimated_bytes.to_double() / 1048576.0)} MB (est.)",
+  )
   println(
     "build           : \{fmt2(build_us / 1000.0)} ms total, \{fmt2(build_us / n.to_double())} us per vector",
   )
@@ -276,6 +281,18 @@ fn run_all() -> Unit raise @moonhnsw.HnswError {
     m,
     ef_construction,
     20261027UL,
+  )
+  bench_metric(
+    "L2 SQ8",
+    @moonhnsw.Distance::L2,
+    2000,
+    dim,
+    100,
+    k,
+    m,
+    ef_construction,
+    20261024UL,
+    storage=@moonhnsw.Storage::SQ8,
   )
 }
 
