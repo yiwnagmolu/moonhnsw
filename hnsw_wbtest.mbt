@@ -1237,3 +1237,32 @@ test "MMR search trades relevance for diversity" {
   }
   assert_true(bad is Err(_))
 }
+
+///|
+test "find_by_label and upsert_labeled implement the update flow" {
+  let dim = 4
+  let idx = Hnsw::new(dim, L2)
+  let old : FixedArray[Float] = FixedArray::make(dim, 1.0)
+  let _ = idx.add_labeled(old, 500UL)
+  let _ = idx.add_labeled(FixedArray::make(dim, 2.0), 501UL)
+  // Duplicate labels are allowed.
+  let _ = idx.add_labeled(FixedArray::make(dim, 3.0), 500UL)
+  assert_eq(idx.find_by_label(500UL).length(), 2)
+  assert_eq(idx.find_by_label(999UL).length(), 0)
+  // Upserting replaces every vector with that label.
+  let replacement : FixedArray[Float] = FixedArray::make(dim, 9.0)
+  let new_id = idx.upsert_labeled(replacement, 500UL)
+  assert_eq(idx.find_by_label(500UL).length(), 1)
+  assert_eq(idx.find_by_label(500UL)[0], new_id)
+  assert_true(!idx.contains(0) && !idx.contains(2))
+  assert_true(idx.contains(1))
+  assert_eq(idx.size(), 2)
+  // The surviving vector holds the new content.
+  let got = idx.get_vector(new_id)
+  for j in 0..<dim {
+    assert_eq(got[j], 9.0)
+  }
+  // Search reflects the replacement, not the old copies.
+  let res = idx.search(replacement, 2, ef=64)
+  assert_eq(res[0].id, new_id)
+}

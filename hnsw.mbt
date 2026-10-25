@@ -232,6 +232,36 @@ pub fn Hnsw::label_of(self : Hnsw, id : Int32) -> UInt64 raise HnswError {
 }
 
 ///|
+/// Returns the ids of all non-deleted vectors carrying `label`, ascending.
+/// Labels may repeat, so this can return more than one id.
+pub fn Hnsw::find_by_label(self : Hnsw, label : UInt64) -> Array[Int32] {
+  let out : Array[Int32] = []
+  for id in 0..<self.count {
+    if self.alive[id] && self.labels[id] == label {
+      out.push(id)
+    }
+  }
+  out
+}
+
+///|
+/// Inserts `vector` tagged with `label`, first tombstone-deleting every
+/// non-deleted vector that already carries the same label — the usual
+/// document-update flow: re-embed the doc, then upsert.
+///
+/// Returns the new id; the replaced ids stay reclaimable via `compact`.
+pub fn Hnsw::upsert_labeled(
+  self : Hnsw,
+  vector : FixedArray[Float],
+  label : UInt64,
+) -> Int32 raise HnswError {
+  for old in self.find_by_label(label) {
+    let _ = self.delete(old)
+  }
+  self.add_labeled(vector, label)
+}
+
+///|
 /// Returns a copy of the stored vector for `id`.
 ///
 /// For `Cosine` indexes this is the normalized vector as used internally.

@@ -69,6 +69,7 @@ pub fn Hnsw::contains(Self, Int32) -> Bool
 pub fn Hnsw::copy(Self) -> Self raise HnswError
 pub fn Hnsw::delete(Self, Int32) -> Unit raise HnswError
 pub fn Hnsw::export_dot(Self, Int32) -> String raise HnswError
+pub fn Hnsw::find_by_label(Self, UInt64) -> Array[Int32]
 pub fn Hnsw::get_vector(Self, Int32) -> FixedArray[Float] raise HnswError
 pub fn Hnsw::ids(Self) -> Array[Int32]
 pub fn Hnsw::label_of(Self, Int32) -> UInt64 raise HnswError
@@ -84,6 +85,7 @@ pub fn Hnsw::search_radius(Self, FixedArray[Float], Double, max_results? : Int32
 pub fn Hnsw::size(Self) -> Int32
 pub fn Hnsw::stats(Self) -> HnswStats
 pub fn Hnsw::total(Self) -> Int32
+pub fn Hnsw::upsert_labeled(Self, FixedArray[Float], UInt64) -> Int32 raise HnswError
 pub fn Hnsw::verify(Self) -> Unit raise HnswError
 
 pub struct HnswParams {
