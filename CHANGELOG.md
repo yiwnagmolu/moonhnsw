@@ -4,6 +4,26 @@ All notable changes to moonhnsw are documented here. Releases are tagged in
 the repository; the binary serialization format stays backward compatible
 (newer loaders accept older payloads).
 
+## 0.7.0 — 2026-10-25
+
+### Added
+
+- SQ8 scalar quantization: `HnswParams::new(storage=SQ8)` learns
+  per-dimension bounds from the first 256 inserted vectors, freezes, and
+  stores one byte per dimension (~4x smaller vector store). Out-of-range
+  values clamp; distances run over the byte store with the full-precision
+  query on the search side; `get_vector` returns the dequantized vector.
+  Recall 0.99 at n=2000 dim=32 on the bundled benchmark.
+- `Hnsw::search_mmr`: Maximal Marginal Relevance re-ranking over an ef-wide
+  candidate pool for diversity-aware retrieval.
+- CRC-32 integrity trailer: v4+ payloads are checksummed and corrupted
+  payloads are rejected with `CorruptData` on load.
+
+### Changed
+
+- Serialization format bumped to v5 (storage section + CRC-32 trailer);
+  v1–v4 payloads keep loading unchanged.
+
 ## 0.6.0 — 2026-10-25
 
 ### Added

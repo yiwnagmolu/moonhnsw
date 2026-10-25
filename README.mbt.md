@@ -13,6 +13,9 @@ Feed in `f32` vectors, get back the approximate top-k nearest neighbors. No FFI,
 - **Introspection**: `stats()` reports per-layer node counts, average degree and a rough memory estimate; `get_vector(id)` and `contains(id)` expose the stored data; `export_dot(layer)` renders any layer as Graphviz DOT; `Neighbor` and `HnswStats` derive `Eq` / `Debug` / `ToJson`, so results drop straight into assertions, logs and JSON pipelines.
 - **External labels**: `add_labeled(vector, label)` tags each vector with a `UInt64` key (a document or chunk id); labels persist through `save` / `load` and `compact`.
 - **Composable**: `absorb()` merges another index (keeping labels), `copy()` deep-clones, and `save_bytes()` / `load_bytes()` wrap the payload as `Bytes` for binary pipelines.
+- **SQ8 scalar quantization**: `storage=SQ8` learns per-dimension bounds from the first 256 vectors and then stores one byte per dimension — ~4x smaller vector store at 0.99 recall on the bundled benchmark; values outside the learned range clamp.
+- **MMR diverse search**: `search_mmr(query, k, lambda)` re-ranks a wide candidate pool for relevance-vs-redundancy, the de-duplication step RAG contexts need.
+- **Integrity-checked persistence**: payloads carry a CRC-32 trailer, so flipped bits and silent truncation are rejected on load instead of surfacing as degraded searches.
 - **Three metrics** with a smaller-is-closer convention: `L2` (squared Euclidean), `InnerProduct` (negated dot product), `Cosine` (vectors normalized once on insertion).
 - **Tunable** `m`, `ef_construction`, and per-query `ef` — the standard recall/speed trade-off knobs.
 - **Zero-copy friendly storage**: vectors live in one flattened `FixedArray[Float]`; traversal marks visited nodes with generation stamps instead of hash sets; distances accumulate in f32 like hnswlib.
@@ -63,6 +66,7 @@ moon add yiwnagmolu/moonhnsw
 | `Hnsw::label_of(id) -> UInt64` | Label stored for an id; defaults to the id itself. |
 | `Hnsw::search(query, k, ef~ = 64) -> Array[Neighbor]` | Approximate top-k, sorted by distance ascending. |
 | `Hnsw::search_filtered(query, k, ef~, filter)` | Top-k restricted by a filter closure over ids (metadata filtering). |
+| `Hnsw::search_mmr(query, k, lambda~, ef~)` | Maximal Marginal Relevance re-ranking for diverse results. |
 | `Hnsw::search_radius(query, radius, max_results~ = 64)` | All neighbors within a distance bound, ascending; approximate like top-k. |
 | `Hnsw::delete(id)` | Tombstone-delete a vector; it disappears from every search. |
 | `Hnsw::contains(id) -> Bool` | True when `id` is stored and not deleted. |
@@ -94,6 +98,7 @@ Distance conventions (smaller = closer):
 | `m` | 16 | Links per node on upper layers (layer 0 keeps `2m`). 12–48 is the usual range; higher = better recall, more memory. |
 | `ef_construction` | 200 | Beam width while inserting. 100–500; higher builds a better graph. |
 | `ef` (per search) | 64 | Beam width at query time. `ef >= k` is enforced; 64–512 covers most workloads. |
+| `storage` | `Float32` | `SQ8` stores one byte per dimension after learning bounds from the first 256 vectors (~4x less memory, slightly lower recall, out-of-range values clamp). |
 
 ## Benchmarks
 
@@ -106,8 +111,9 @@ Measured with the bundled `examples/benchmark` on uniform random data (n=2000, d
 | Cosine | 2 000 | 965 ms | recall 1.00, 5168 q/s | recall 1.00, 3225 q/s | recall 1.00, 1939 q/s |
 | L2 (scale) | 10 000 | 9554 ms | recall 0.97, 3003 q/s | recall 1.00, 1328 q/s | recall 1.00, 761 q/s |
 | L2 (large) | 100 000 | 184.0 s | recall 0.83, 1992 q/s | recall 0.95, 885 q/s | recall 1.00, 550 q/s |
+| L2 SQ8 | 2 000 | 1458 ms | recall 0.99, 2959 q/s | recall 0.99, 1892 q/s | recall 0.99, 1315 q/s |
 
-At 10k vectors the ef trade-off becomes visible: `ef=64` reaches 0.97 recall, `ef=128` already 1.00. At 100k the graph is 4 layers tall (~30 MB estimated); random data needs `ef=256` for exact recall — raise `m` if you want the same recall at lower `ef`.
+At 10k vectors the ef trade-off becomes visible: `ef=64` reaches 0.97 recall, `ef=128` already 1.00. At 100k the graph is 4 layers tall (~30 MB estimated); random data needs `ef=256` for exact recall — raise `m` if you want the same recall at lower `ef`. SQ8 shrinks the estimated index from 0.53 MB to 0.34 MB at this size (the vector store itself drops 4x) at 0.99 recall, and builds ~44% slower because of the quantize/freeze pass.
 
 Recall is verified against exact brute-force ground truth in the test suite for all three metrics (recall@10 >= 0.9 on random datasets).
 
