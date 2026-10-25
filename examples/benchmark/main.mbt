@@ -116,7 +116,8 @@ fn dist_row(
 }
 
 ///|
-/// Exact top-k ids via repeated-minimum selection.
+/// Exact top-k ids via a single pass over all rows, maintaining a running
+/// top-k — the fair brute-force baseline (n distances per query).
 fn brute_topk(
   metric : @moonhnsw.Distance,
   truth_data : FixedArray[Float],
@@ -125,22 +126,37 @@ fn brute_topk(
   q : FixedArray[Float],
   k : Int32,
 ) -> Array[Int32] {
-  let taken : Array[Bool] = Array::make(n, false)
-  let out : Array[Int32] = []
-  for _ in 0..<k {
-    let mut best = -1
-    let mut best_d = 0.0
-    for i in 0..<n {
-      if !taken[i] {
-        let d = dist_row(metric, truth_data, i, dim, q)
-        if best < 0 || d < best_d {
-          best = i
-          best_d = d
-        }
+  // Running top-k as parallel id/distance arrays, worst at the end.
+  let ids : FixedArray[Int32] = FixedArray::make(k, -1)
+  let ds : FixedArray[Double] = FixedArray::make(k, 1.0e308)
+  let mut filled = 0
+  for i in 0..<n {
+    let d = dist_row(metric, truth_data, i, dim, q)
+    if filled < k {
+      // Insertion into the sorted prefix.
+      let mut j = filled
+      while j > 0 && ds.unsafe_get(j - 1) > d {
+        ids[j] = ids.unsafe_get(j - 1)
+        ds[j] = ds.unsafe_get(j - 1)
+        j -= 1
       }
+      ids[j] = i
+      ds[j] = d
+      filled += 1
+    } else if d < ds.unsafe_get(k - 1) {
+      let mut j = k - 1
+      while j > 0 && ds.unsafe_get(j - 1) > d {
+        ids[j] = ids.unsafe_get(j - 1)
+        ds[j] = ds.unsafe_get(j - 1)
+        j -= 1
+      }
+      ids[j] = i
+      ds[j] = d
     }
-    taken[best] = true
-    out.push(best)
+  }
+  let out : Array[Int32] = []
+  for j in 0..<filled {
+    out.push(ids.unsafe_get(j))
   }
   out
 }
@@ -218,12 +234,23 @@ fn bench_metric(
   }
   // Warm-up search.
   let _ = idx.search(row_of(queries, 0, dim), k, ef=64)
+  // Timed brute-force baseline for the speedup column.
+  let tb = @bench.monotonic_clock_start()
+  for qi in 0..<n_queries {
+    let q = row_of(queries, qi, dim)
+    let qt = if for_cosine { normalize_flat(q, 1, dim) } else { q }
+    let _ = brute_topk(truth_metric, truth_data, n, dim, qt, k)
+  }
+  let brute_us = @bench.monotonic_clock_end(tb)
+  let brute_qps = n_queries.to_double() / (brute_us / 1000000.0)
   // Search at several beam widths.
   for ef in [64, 128, 256] {
     let mut hits = 0
+    let mut dists_total = 0L
     let t1 = @bench.monotonic_clock_start()
     for qi in 0..<n_queries {
       let res = idx.search(row_of(queries, qi, dim), k, ef~)
+      dists_total += idx.distance_computations()
       let truth = truths[qi]
       for r in res {
         for t in truth {
@@ -237,8 +264,10 @@ fn bench_metric(
     let us = @bench.monotonic_clock_end(t1)
     let recall = hits.to_double() / (n_queries * k).to_double()
     let qps = n_queries.to_double() / (us / 1000000.0)
+    let speedup = qps / brute_qps
+    let dists_per_query = dists_total.to_double() / n_queries.to_double()
     println(
-      "search ef=\{ef}\t: recall@\{k}=\{fmt2(recall)}  qps=\{fmt2(qps)}  (\{fmt2(us / n_queries.to_double())} us per query)",
+      "search ef=\{ef}\t: recall@\{k}=\{fmt2(recall)}  qps=\{fmt2(qps)}  \{fmt2(speedup)}x brute  \{fmt2(dists_per_query)} dists/query (brute \{n})",
     )
   }
 }
