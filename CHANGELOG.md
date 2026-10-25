@@ -4,6 +4,17 @@ All notable changes to moonhnsw are documented here. Releases are tagged in
 the repository; the binary serialization format stays backward compatible
 (newer loaders accept older payloads).
 
+## 0.7.1 — 2026-10-25
+
+### Changed
+
+- SQ8 search quantizes its query once per operation instead of once per
+  visited neighbor (reference-identity caching, invalidated at every public
+  entry point): 2959 -> 4306 qps at ef=64 and 1315 -> 1775 qps at ef=256 on
+  the wasm-gc benchmark, build 1458 -> 1255 ms.
+- Vector payloads move through bulk serialization helpers with one capacity
+  check per block instead of per byte.
+
 ## 0.7.0 — 2026-10-25
 
 ### Added
