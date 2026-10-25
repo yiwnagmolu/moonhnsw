@@ -1,5 +1,7 @@
 # moonhnsw
 
+[![CI](https://github.com/yiwnagmolu/moonhnsw/actions/workflows/ci.yml/badge.svg)](https://github.com/yiwnagmolu/moonhnsw/actions/workflows/ci.yml)
+
 Pure MoonBit approximate nearest-neighbor search: a local vector index built on the HNSW graph (Malkov & Yashunin, 2016) — the same algorithm inside [hnswlib](https://github.com/nmslib/hnswlib), [usearch](https://github.com/unum-cloud/usearch) and Qdrant.
 
 Feed in `f32` vectors, get back the approximate top-k nearest neighbors. No FFI, no system dependencies — the whole index is MoonBit, so it runs on **native, wasm and js** backends alike.
@@ -34,6 +36,12 @@ for hit in hits {
   println("id=\{hit.id} distance=\{hit.distance}")
 }
 
+// Tag with a business key and search within a metadata subset.
+let labeled_id = index.add_labeled(v, 42UL)
+let subset = index.search_filtered(query, 5, filter=fn(id) {
+  index.label_of(id) % 2UL == 0UL
+})
+
 // Persist and restore.
 let bytes : FixedArray[Byte] = index.save()
 let restored = @moonhnsw.Hnsw::load(bytes)
@@ -54,6 +62,7 @@ moon add yiwnagmolu/moonhnsw
 | `Hnsw::add_labeled(vector, label) -> Int` | Insert tagged with a `UInt64` label of your choice (need not be unique). |
 | `Hnsw::label_of(id) -> UInt64` | Label stored for an id; defaults to the id itself. |
 | `Hnsw::search(query, k, ef~ = 64) -> Array[Neighbor]` | Approximate top-k, sorted by distance ascending. |
+| `Hnsw::search_filtered(query, k, ef~, filter)` | Top-k restricted by a filter closure over ids (metadata filtering). |
 | `Hnsw::search_radius(query, radius, max_results~ = 64)` | All neighbors within a distance bound, ascending; approximate like top-k. |
 | `Hnsw::delete(id)` | Tombstone-delete a vector; it disappears from every search. |
 | `Hnsw::contains(id) -> Bool` | True when `id` is stored and not deleted. |
