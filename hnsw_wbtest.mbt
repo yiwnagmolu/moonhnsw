@@ -1266,3 +1266,24 @@ test "find_by_label and upsert_labeled implement the update flow" {
   let res = idx.search(replacement, 2, ef=64)
   assert_eq(res[0].id, new_id)
 }
+
+///|
+test "search_batch matches per-query searches" {
+  let n = 60
+  let dim = 4
+  let data = gen_dataset(191UL, n, dim, 0.0, 1.0)
+  let idx = Hnsw::new(dim, L2)
+  for i in 0..<n {
+    let _ = idx.add(row_of(data, i, dim))
+  }
+  let queries = gen_dataset(192UL, 6, dim, 0.0, 1.0)
+  let qs : Array[FixedArray[Float]] = []
+  for qi in 0..<6 {
+    qs.push(row_of(queries, qi, dim))
+  }
+  let batched = idx.search_batch(qs, 5, ef=64)
+  assert_eq(batched.length(), 6)
+  for qi in 0..<6 {
+    assert_eq(batched[qi], idx.search(qs[qi], 5, ef=64))
+  }
+}

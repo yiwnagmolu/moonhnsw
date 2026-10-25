@@ -1064,6 +1064,23 @@ pub fn Hnsw::search_filtered(
 }
 
 ///|
+/// Runs `search` for every query in `queries` with the same `k` and `ef`,
+/// returning one result list per query, in order. A query with a wrong
+/// dimension raises on its turn, after earlier results were produced.
+pub fn Hnsw::search_batch(
+  self : Hnsw,
+  queries : Array[FixedArray[Float]],
+  k : Int32,
+  ef~ : Int32 = 64,
+) -> Array[Array[Neighbor]] raise HnswError {
+  let out : Array[Array[Neighbor]] = []
+  for q in queries {
+    out.push(self.search(q, k, ef~))
+  }
+  out
+}
+
+///|
 /// Maximal Marginal Relevance search: retrieves a candidate pool with an
 /// `ef` beam search, then greedily selects `k` results that balance
 /// relevance to the query against redundancy with the already-selected set.
