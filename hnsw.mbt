@@ -1021,6 +1021,75 @@ pub fn Hnsw::search_filtered(
 }
 
 ///|
+/// Maximal Marginal Relevance search: retrieves a candidate pool with an
+/// `ef` beam search, then greedily selects `k` results that balance
+/// relevance to the query against redundancy with the already-selected set.
+///
+/// `lambda` blends the two objectives: 1.0 keeps only the most relevant
+/// candidates (identical to `search`), 0.0 orders purely by relevance too on
+/// the first pick and by anti-redundancy afterwards; 0.3-0.7 is the usual
+/// working range for de-duplicated RAG contexts. Similarity is the negated
+/// index distance, so every metric works unchanged.
+pub fn Hnsw::search_mmr(
+  self : Hnsw,
+  query : FixedArray[Float],
+  k : Int32,
+  lambda~ : Double = 0.5,
+  ef~ : Int32 = 128,
+) -> Array[Neighbor] raise HnswError {
+  if lambda < 0.0 || lambda > 1.0 {
+    raise InvalidParams("lambda must be within [0, 1]")
+  }
+  // The pool must be wider than k, or near-duplicate candidates crowd out
+  // any diversity the greedy pass could achieve.
+  let pool = self.search(query, ef, ef~)
+  if lambda <= 0.0 || pool.length() <= 1 {
+    let out : Array[Neighbor] = []
+    for r in pool {
+      if out.length() >= k {
+        break
+      }
+      out.push(r)
+    }
+    return out
+  }
+  let n = pool.length()
+  let taken : Array[Bool] = Array::make(n, false)
+  let out : Array[Neighbor] = []
+  for _ in 0..<k {
+    let mut best = -1
+    let mut best_score = 0.0
+    for i in 0..<n {
+      if !taken[i] {
+        // Similarity is the negated distance; the redundancy penalty is the
+        // largest similarity to anything already selected (none on the
+        // first pick).
+        let relevance = -pool[i].distance
+        let mut max_sim = -1.0e308
+        for sel in out {
+          let sim = -self.dist_ids(pool[i].id, sel.id)
+          if sim > max_sim {
+            max_sim = sim
+          }
+        }
+        let penalty = if out.length() == 0 { 0.0 } else { lambda * max_sim }
+        let score = (1.0 - lambda) * relevance - penalty
+        if best < 0 || score > best_score {
+          best = i
+          best_score = score
+        }
+      }
+    }
+    if best < 0 {
+      break
+    }
+    taken[best] = true
+    out.push(pool[best])
+  }
+  out
+}
+
+///|
 /// Approximate radius search: returns up to `max_results` non-deleted
 /// neighbors with distance <= `radius`, sorted by distance ascending.
 ///

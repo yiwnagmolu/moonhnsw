@@ -1183,3 +1183,57 @@ test "SQ8 roundtrip, dequantization and clamping" {
   assert_eq(small2.size(), 1)
   assert_eq(small2.search(FixedArray::make(dim, 0.5), 1)[0].id, 0)
 }
+
+///|
+test "MMR search trades relevance for diversity" {
+  let dim = 8
+  // Six near-copies of the query plus plenty of spread-out filler.
+  let base = gen_dataset(161UL, 1, dim, 0.0, 1.0)
+  let data = gen_dataset(162UL, 120, dim, 0.0, 1.0)
+  let idx = Hnsw::new(dim, L2)
+  for c in 0..<6 {
+    let near : FixedArray[Float] = FixedArray::make(dim, 0.0)
+    for j in 0..<dim {
+      near[j] = base[j] + Float::from_double(c.to_double() * 0.0001)
+    }
+    let _ = idx.add(near)
+  }
+  for i in 0..<120 {
+    let _ = idx.add(row_of(data, i, dim))
+  }
+  let q : FixedArray[Float] = FixedArray::make(dim, 0.0)
+  FixedArray::unsafe_blit(q, 0, base, 0, dim)
+  // Plain search fills the result with the near-copies.
+  let plain = idx.search(q, 6, ef=128)
+  let mut copies_plain = 0
+  for r in plain {
+    if r.id < 6 {
+      copies_plain += 1
+    }
+  }
+  assert_true(copies_plain >= 5)
+  // High-lambda MMR spreads out instead.
+  let diverse = idx.search_mmr(q, 6, lambda=1.0, ef=128)
+  assert_eq(diverse.length(), 6)
+  let mut copies_mmr = 0
+  for r in diverse {
+    if r.id < 6 {
+      copies_mmr += 1
+    }
+  }
+  assert_true(copies_mmr <= 2)
+  // Lambda 0 keeps the plain relevance ordering.
+  assert_eq(idx.search_mmr(q, 5, lambda=0.0, ef=128), idx.search(q, 5, ef=128))
+  // A single result is always the nearest neighbor.
+  assert_eq(
+    idx.search_mmr(q, 1, lambda=0.3, ef=128)[0].id,
+    idx.search(q, 1, ef=128)[0].id,
+  )
+  // Lambda out of range raises.
+  let bad : Result[Array[Neighbor], HnswError] = Ok(
+    idx.search_mmr(q, 5, lambda=1.5),
+  ) catch {
+    e => Err(e)
+  }
+  assert_true(bad is Err(_))
+}
