@@ -33,6 +33,7 @@ fn Hnsw::next_stamp(self : Hnsw) -> Int32 {
 /// is quantized into a reused scratch buffer once per search (detected by
 /// reference identity) and the distance runs over bytes.
 fn Hnsw::dist_query(self : Hnsw, q : FixedArray[Float], id : Int32) -> Double {
+  self.dist_calls += 1L
   if self.q_active() {
     if !physical_equal(q, self.q_scratch_source) {
       self.quantize_into(q, 0, self.q_scratch, 0)
@@ -46,6 +47,7 @@ fn Hnsw::dist_query(self : Hnsw, q : FixedArray[Float], id : Int32) -> Double {
 ///|
 /// Distance between two stored vectors.
 fn Hnsw::dist_ids(self : Hnsw, a : Int32, b : Int32) -> Double {
+  self.dist_calls += 1L
   if self.q_active() {
     return self.dist_qq(self.quants, a * self.dim, b * self.dim)
   }
@@ -237,6 +239,7 @@ pub fn Hnsw::search(
     return []
   }
   self.q_scratch_source = self.q_scratch_reset
+  self.dist_calls = 0L
   // L2/IP search the caller's array directly; only Cosine needs a
   // normalized copy.
   let q : FixedArray[Float] = if self.normalize {
@@ -281,6 +284,7 @@ pub fn Hnsw::search_filtered(
     return []
   }
   self.q_scratch_source = self.q_scratch_reset
+  self.dist_calls = 0L
   // L2/IP search the caller's array directly; only Cosine needs a
   // normalized copy.
   let q : FixedArray[Float] = if self.normalize {
@@ -421,6 +425,7 @@ pub fn Hnsw::search_radius(
     raise InvalidParams("radius must be >= 0")
   }
   self.q_scratch_source = self.q_scratch_reset
+  self.dist_calls = 0L
   // L2/IP search the caller's array directly; only Cosine needs a
   // normalized copy.
   let q : FixedArray[Float] = if self.normalize {

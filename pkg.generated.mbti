@@ -62,6 +62,7 @@ pub struct Hnsw {
   mut visited : FixedArray[Int32]
   mut stamp : Int32
   mut rng_state : UInt64
+  mut dist_calls : Int64
 }
 pub fn Hnsw::absorb(Self, Self) -> FixedArray[Int32] raise HnswError
 pub fn Hnsw::add(Self, FixedArray[Float]) -> Int32 raise HnswError
@@ -70,6 +71,7 @@ pub fn Hnsw::compact(Self) -> CompactResult raise HnswError
 pub fn Hnsw::contains(Self, Int32) -> Bool
 pub fn Hnsw::copy(Self) -> Self raise HnswError
 pub fn Hnsw::delete(Self, Int32) -> Unit raise HnswError
+pub fn Hnsw::distance_computations(Self) -> Int64
 pub fn Hnsw::export_dot(Self, Int32) -> String raise HnswError
 pub fn Hnsw::find_by_label(Self, UInt64) -> Array[Int32]
 pub fn Hnsw::from_vectors(Int32, Distance, Array[FixedArray[Float]], params? : HnswParams) -> Self raise HnswError

@@ -562,5 +562,6 @@ pub fn Hnsw::load(data : FixedArray[Byte]) -> Hnsw raise HnswError {
     visited: FixedArray::make(visited_len, 0),
     stamp: 0,
     rng_state,
+    dist_calls: 0L,
   }
 }

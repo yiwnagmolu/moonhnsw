@@ -1477,3 +1477,27 @@ test "SQ8 supports radius search and compact" {
   assert_eq(a.length(), b.length())
   assert_eq(a[0].id, b[0].id)
 }
+
+///|
+test "distance_computations reports sub-linear search work" {
+  let n = 1000
+  let dim = 16
+  let data = gen_dataset(211UL, n, dim, 0.0, 1.0)
+  let idx = Hnsw::new(dim, L2)
+  for i in 0..<n {
+    let _ = idx.add(row_of(data, i, dim))
+  }
+  let q = row_of(data, 7, dim)
+  let _ = idx.search(q, 10, ef=64)
+  // A graph search touches a small fraction of the dataset: two orders of
+  // magnitude below the 1000 distances brute force pays.
+  let dists = idx.distance_computations()
+  assert_true(dists > 0L)
+  assert_true(dists < n.to_int64())
+  // Wider beams do more work, and each search resets the counter.
+  let _ = idx.search(q, 10, ef=256)
+  let wide = idx.distance_computations()
+  assert_true(wide > dists)
+  let _ = idx.search(q, 1, ef=1)
+  assert_true(idx.distance_computations() < wide)
+}

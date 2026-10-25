@@ -102,7 +102,7 @@ pub struct Hnsw {
   params : HnswParams
   /// True when the metric pre-normalizes vectors (Cosine).
   normalize : Bool
-  /// 1 / ln(m) 闁?level assignment factor.
+  /// 1 / ln(m) 闂?level assignment factor.
   level_mult : Double
   /// Id of the entry point, -1 when the index is empty.
   mut entry : Int32
@@ -157,6 +157,9 @@ pub struct Hnsw {
   mut stamp : Int32
   /// PRNG state used for level assignment.
   mut rng_state : UInt64
+  /// Distance computations since the last search entry point 鈥?the
+  /// hardware-independent efficiency metric of the graph.
+  mut dist_calls : Int64
 }
 
 ///|
@@ -210,7 +213,19 @@ pub fn Hnsw::new(
     visited: FixedArray::make(0, 0),
     stamp: 0,
     rng_state: params.seed,
+    dist_calls: 0L,
   }
+}
+
+///|
+/// Distance computations performed by the last search entry point 鈥?the
+/// hardware-independent efficiency metric of the graph (fewer means a
+/// better-built graph reaching the same neighbors with less work; compare
+/// across machines and with published ANN numbers directly). Composing
+/// entry points like `search_mmr` or `search_batch` report the total of
+/// their inner searches plus their own re-ranking work.
+pub fn Hnsw::distance_computations(self : Hnsw) -> Int64 {
+  self.dist_calls
 }
 
 ///|
@@ -232,7 +247,7 @@ pub fn Hnsw::contains(self : Hnsw, id : Int32) -> Bool {
 }
 
 ///|
-/// Returns the label stored for `id` 闁?the id itself by default, or the
+/// Returns the label stored for `id` 闂?the id itself by default, or the
 /// value passed to `add_labeled`. Raises `InvalidId` for unknown or deleted
 /// ids.
 pub fn Hnsw::label_of(self : Hnsw, id : Int32) -> UInt64 raise HnswError {
