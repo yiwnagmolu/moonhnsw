@@ -28,16 +28,20 @@ pub struct HnswParams {
   ef_construction : Int32
   /// Seed of the internal PRNG used to draw node levels.
   seed : UInt64
+  /// Vector storage precision (full floats or 8-bit scalar quantization).
+  storage : Storage
 }
 
 ///|
-/// Default parameters: `m = 16`, `ef_construction = 200`, fixed random seed.
+/// Default parameters: `m = 16`, `ef_construction = 200`, full-precision
+/// storage, fixed random seed.
 pub fn HnswParams::new(
   m~ : Int32 = 16,
   ef_construction~ : Int32 = 200,
   seed~ : UInt64 = 0x9E3779B97F4A7C15UL,
+  storage~ : Storage = Float32,
 ) -> HnswParams {
-  { m, ef_construction, seed, }
+  { m, ef_construction, seed, storage, }
 }
 
 ///|
@@ -98,7 +102,7 @@ pub struct Hnsw {
   params : HnswParams
   /// True when the metric pre-normalizes vectors (Cosine).
   normalize : Bool
-  /// 1 / ln(m) — level assignment factor.
+  /// 1 / ln(m) 鈥?level assignment factor.
   level_mult : Double
   /// Id of the entry point, -1 when the index is empty.
   mut entry : Int32
@@ -112,10 +116,30 @@ pub struct Hnsw {
   mut alive : FixedArray[Bool]
   /// User-facing label per node; defaults to the internal id.
   labels : Array[UInt64]
-  /// Flattened vector storage: `count * dim` floats.
+  /// Selected storage precision.
+  storage : Storage
+  /// Flattened full-precision storage: `count * dim` floats. Held until the
+  /// SQ8 store freezes, then released.
   mut vectors : FixedArray[Float]
   /// Number of vector slots allocated in `vectors`.
-  mut capacity : Int32
+  mut f_capacity : Int32
+  /// Flattened quantized storage: `count * dim` bytes, valid once frozen.
+  mut quants : FixedArray[Byte]
+  /// Number of vector slots allocated in `quants`.
+  mut q_capacity : Int32
+  /// Per-dimension lower quantization bound (running until frozen).
+  q_mins : FixedArray[Float]
+  /// Per-dimension upper quantization bound (running until frozen).
+  q_maxs : FixedArray[Float]
+  /// Per-dimension scale, (max - min) / 255; valid once frozen.
+  q_scales : FixedArray[Float]
+  /// True once the quantization bounds are frozen and vectors are stored as
+  /// one byte per dimension.
+  mut q_frozen : Bool
+  /// Reusable scratch for quantizing query vectors during search.
+  q_scratch : FixedArray[Byte]
+  /// Reusable scratch for the normalized copy of an inserted vector.
+  f_scratch : FixedArray[Float]
   /// `links[node][layer]` is the neighbor id list of `node` on `layer`.
   links : Array[Array[Array[Int32]]]
   /// Visited markers for graph traversal, keyed by node id.
@@ -153,8 +177,17 @@ pub fn Hnsw::new(
     alive_count: 0,
     alive: FixedArray::make(0, false),
     labels: [],
+    storage: params.storage,
     vectors: FixedArray::make(0, 0.0),
-    capacity: 0,
+    f_capacity: 0,
+    quants: FixedArray::make(0, 0),
+    q_capacity: 0,
+    q_mins: FixedArray::make(dim, 3.0e38),
+    q_maxs: FixedArray::make(dim, -3.0e38),
+    q_scales: FixedArray::make(dim, 1.0),
+    q_frozen: false,
+    q_scratch: FixedArray::make(dim, 0),
+    f_scratch: FixedArray::make(dim, 0.0),
     links: [],
     visited: FixedArray::make(0, 0),
     stamp: 0,
@@ -181,7 +214,7 @@ pub fn Hnsw::contains(self : Hnsw, id : Int32) -> Bool {
 }
 
 ///|
-/// Returns the label stored for `id` — the id itself by default, or the
+/// Returns the label stored for `id` 鈥?the id itself by default, or the
 /// value passed to `add_labeled`. Raises `InvalidId` for unknown or deleted
 /// ids.
 pub fn Hnsw::label_of(self : Hnsw, id : Int32) -> UInt64 raise HnswError {
@@ -204,7 +237,11 @@ pub fn Hnsw::get_vector(
     raise InvalidId(id)
   }
   let out : FixedArray[Float] = FixedArray::make(self.dim, 0.0)
-  FixedArray::unsafe_blit(out, 0, self.vectors, id * self.dim, self.dim)
+  if self.q_active() {
+    self.dequantize_into(id, out)
+  } else {
+    FixedArray::unsafe_blit(out, 0, self.vectors, id * self.dim, self.dim)
+  }
   out
 }
 
@@ -267,7 +304,16 @@ pub fn Hnsw::stats(self : Hnsw) -> HnswStats {
       },
     )
   }
-  let estimated = self.capacity.to_int64() * self.dim.to_int64() * 4L +
+  let vector_bytes = if self.storage is Float32 {
+    self.f_capacity.to_int64() * self.dim.to_int64() * 4L
+  } else if self.q_frozen {
+    self.q_capacity.to_int64() * self.dim.to_int64() +
+    3L * self.dim.to_int64() * 4L
+  } else {
+    self.f_capacity.to_int64() * self.dim.to_int64() * 4L +
+    2L * self.dim.to_int64() * 4L
+  }
+  let estimated = vector_bytes +
     edges.to_int64() * 4L +
     lists.to_int64() * 24L +
     self.visited.length().to_int64() * 4L +
@@ -392,6 +438,20 @@ pub fn Hnsw::verify(self : Hnsw) -> Unit raise HnswError {
   }
   if self.labels.length() != self.count || self.links.length() != self.count {
     raise CorruptData("node count mismatch")
+  }
+  if self.q_mins.length() != self.dim ||
+    self.q_maxs.length() != self.dim ||
+    self.q_scales.length() != self.dim ||
+    self.q_scratch.length() != self.dim ||
+    self.f_scratch.length() != self.dim {
+    raise CorruptData("scratch or bounds size mismatch")
+  }
+  if self.storage is SQ8 && self.q_frozen {
+    if self.quants.length() < self.count * self.dim || !self.vectors.is_empty() {
+      raise CorruptData("quantized store inconsistent")
+    }
+  } else if self.vectors.length() < self.count * self.dim {
+    raise CorruptData("vector store too small")
   }
   let mut alive = 0
   for id in 0..<self.count {
@@ -526,21 +586,21 @@ fn Hnsw::random_level(self : Hnsw) -> Int32 {
 }
 
 ///|
-/// Grows the flattened vector storage to hold at least `needed` vectors.
+/// Grows the full-precision storage to hold at least `needed` vectors.
 fn Hnsw::ensure_vector_capacity(self : Hnsw, needed : Int32) -> Unit {
-  if self.capacity >= needed {
+  if self.f_capacity >= needed {
     return
   }
-  let mut cap = if self.capacity == 0 { 64 } else { self.capacity * 2 }
+  let mut cap = if self.f_capacity == 0 { 64 } else { self.f_capacity * 2 }
   while cap < needed {
     cap = cap * 2
   }
   let grown : FixedArray[Float] = FixedArray::make(cap * self.dim, 0.0)
-  if self.count > 0 {
+  if self.count > 0 && self.f_capacity > 0 {
     FixedArray::unsafe_blit(grown, 0, self.vectors, 0, self.count * self.dim)
   }
   self.vectors = grown
-  self.capacity = cap
+  self.f_capacity = cap
 }
 
 ///|
@@ -574,14 +634,23 @@ fn Hnsw::next_stamp(self : Hnsw) -> Int32 {
 }
 
 ///|
-/// Distance between a query slice and a stored vector.
+/// Distance between a query slice and a stored vector. Under SQ8 the query
+/// is quantized into a reused scratch buffer and the distance runs over
+/// bytes.
 fn Hnsw::dist_query(self : Hnsw, q : FixedArray[Float], id : Int32) -> Double {
+  if self.q_active() {
+    self.quantize_into(q, 0, self.q_scratch, 0)
+    return self.dist_qq(self.q_scratch, 0, id * self.dim)
+  }
   distance_between(self.distance, q, 0, self.vectors, id * self.dim, self.dim)
 }
 
 ///|
 /// Distance between two stored vectors.
 fn Hnsw::dist_ids(self : Hnsw, a : Int32, b : Int32) -> Double {
+  if self.q_active() {
+    return self.dist_qq(self.quants, a * self.dim, b * self.dim)
+  }
   distance_between(
     self.distance,
     self.vectors,
@@ -624,7 +693,7 @@ fn Hnsw::greedy_descent(
 /// distance, ascending.
 ///
 /// Deleted (tombstone) nodes are traversed for connectivity but excluded
-/// from the results, unless `include_dead` is set — index construction uses
+/// from the results, unless `include_dead` is set 鈥?index construction uses
 /// that mode so new nodes stay linked into the graph even when their
 /// surroundings are deleted.
 ///
@@ -781,16 +850,32 @@ fn Hnsw::insert(
     raise DimMismatch(self.dim, vector.length())
   }
   let id = self.count
-  self.ensure_vector_capacity(id + 1)
   let off = id * self.dim
+  // Normalize (when the metric needs it) into scratch, then store at the
+  // active precision.
   let _ = copy_normalized(
     vector,
     0,
-    self.vectors,
-    off,
+    self.f_scratch,
+    0,
     self.dim,
     self.normalize,
   )
+  if self.storage is Float32 {
+    self.ensure_vector_capacity(id + 1)
+    FixedArray::unsafe_blit(self.vectors, off, self.f_scratch, 0, self.dim)
+  } else if !self.q_frozen {
+    // Full floats until the quantization bounds freeze at FREEZE_AT.
+    self.ensure_vector_capacity(id + 1)
+    FixedArray::unsafe_blit(self.vectors, off, self.f_scratch, 0, self.dim)
+    self.observe_bounds(self.f_scratch, 0)
+    if id + 1 == FREEZE_AT {
+      self.freeze_and_quantize_all()
+    }
+  } else {
+    self.ensure_quant_capacity(id + 1)
+    self.quantize_into(self.f_scratch, 0, self.quants, off)
+  }
   let level = self.random_level()
   let node_links : Array[Array[Int32]] = []
   for _ in 0..<=level {
@@ -809,8 +894,15 @@ fn Hnsw::insert(
     return id
   }
   // The stored (possibly normalized) vector drives all distance computations.
-  let q : FixedArray[Float] = FixedArray::make(self.dim, 0.0)
-  FixedArray::unsafe_blit(q, 0, self.vectors, off, self.dim)
+  // Under frozen SQ8 the full-precision copy in f_scratch serves as the
+  // query; the byte store only holds the indexed side.
+  let q : FixedArray[Float] = if self.q_active() {
+    self.f_scratch
+  } else {
+    let qc : FixedArray[Float] = FixedArray::make(self.dim, 0.0)
+    FixedArray::unsafe_blit(qc, 0, self.vectors, off, self.dim)
+    qc
+  }
   // Greedy descent through layers above the node's level.
   let mut ep = self.entry
   let mut ep_dist = self.dist_query(q, ep)
@@ -897,7 +989,7 @@ pub fn Hnsw::search(
 ///
 /// Traversal walks the graph as usual; only the result set is filtered, so
 /// with a highly selective filter the call may return fewer than `k` results
-/// even when more matches exist — raise `ef` to compensate. Filter closures
+/// even when more matches exist 鈥?raise `ef` to compensate. Filter closures
 /// receive the internal id; combine with `label_of(id)` for label-based
 /// filtering. Deleted vectors never pass, regardless of the filter.
 pub fn Hnsw::search_filtered(

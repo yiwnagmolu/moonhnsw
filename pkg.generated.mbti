@@ -43,8 +43,17 @@ pub struct Hnsw {
   mut alive_count : Int32
   mut alive : FixedArray[Bool]
   labels : Array[UInt64]
+  storage : Storage
   mut vectors : FixedArray[Float]
-  mut capacity : Int32
+  mut f_capacity : Int32
+  mut quants : FixedArray[Byte]
+  mut q_capacity : Int32
+  q_mins : FixedArray[Float]
+  q_maxs : FixedArray[Float]
+  q_scales : FixedArray[Float]
+  mut q_frozen : Bool
+  q_scratch : FixedArray[Byte]
+  f_scratch : FixedArray[Float]
   links : Array[Array[Array[Int32]]]
   mut visited : FixedArray[Int32]
   mut stamp : Int32
@@ -78,8 +87,9 @@ pub struct HnswParams {
   m : Int32
   ef_construction : Int32
   seed : UInt64
+  storage : Storage
 }
-pub fn HnswParams::new(m? : Int32, ef_construction? : Int32, seed? : UInt64) -> Self
+pub fn HnswParams::new(m? : Int32, ef_construction? : Int32, seed? : UInt64, storage? : Storage) -> Self
 
 pub struct HnswStats {
   count : Int32
@@ -102,6 +112,13 @@ pub fn Neighbor::equal(Self, Self) -> Bool
 pub fn Neighbor::not_equal(Self, Self) -> Bool
 pub fn Neighbor::to_json(Self) -> Json
 pub fn Neighbor::to_repr(Self) -> @debug.Repr
+
+pub(all) enum Storage {
+  Float32
+  SQ8
+} derive(Eq)
+pub fn Storage::equal(Self, Self) -> Bool
+pub fn Storage::not_equal(Self, Self) -> Bool
 
 // Type aliases
 

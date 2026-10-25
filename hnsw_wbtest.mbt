@@ -196,13 +196,14 @@ fn recall_of(
   ef_construction : Int32,
   ef : Int32,
   k : Int32,
+  storage~ : Storage = Float32,
 ) -> Double raise HnswError {
   // Uniform data in [0, 1)^dim avoids zero vectors for Cosine.
   let data = gen_dataset(seed, n, dim, 0.0, 1.0)
   let idx = Hnsw::new(
     dim,
     metric,
-    params=HnswParams::new(m~, ef_construction~, seed=seed + 1UL),
+    params=HnswParams::new(m~, ef_construction~, seed=seed + 1UL, storage~),
   )
   for i in 0..<n {
     let _ = idx.add(row_of(data, i, dim))
@@ -1114,4 +1115,71 @@ test "v4 payload checksum detects bit flips" {
   }
   // The untouched payload still loads and verifies.
   Hnsw::load(bytes).verify()
+}
+
+///|
+test "recall with SQ8 storage stays high" {
+  let l2 = recall_of(L2, 42UL, 400, 16, 16, 200, 150, 10, storage=SQ8)
+  assert_true(l2 >= 0.8)
+  let cosine = recall_of(Cosine, 44UL, 400, 16, 16, 200, 150, 10, storage=SQ8)
+  assert_true(cosine >= 0.75)
+}
+
+///|
+test "SQ8 store uses far less memory than full floats" {
+  let n = 1000
+  let dim = 16
+  let data = gen_dataset(151UL, n, dim, 0.0, 1.0)
+  let full = Hnsw::new(dim, L2)
+  let quantized = Hnsw::new(dim, L2, params=HnswParams::new(storage=SQ8))
+  for i in 0..<n {
+    let v = row_of(data, i, dim)
+    let _ = full.add(v)
+    let _ = quantized.add(v)
+  }
+  assert_true(quantized.q_frozen)
+  // The byte store is a quarter of the float store for the same capacity;
+  // total index size also shrinks (graph edges dominate the remainder).
+  let bytes_full = full.vectors.length().to_int64() * 4L
+  let bytes_quant = quantized.quants.length().to_int64()
+  assert_true(bytes_quant * 2L < bytes_full)
+  assert_true(quantized.stats().estimated_bytes < full.stats().estimated_bytes)
+}
+
+///|
+test "SQ8 roundtrip, dequantization and clamping" {
+  let n = 300
+  let dim = 8
+  let data = gen_dataset(152UL, n, dim, 0.0, 1.0)
+  let idx = Hnsw::new(dim, L2, params=HnswParams::new(storage=SQ8))
+  for i in 0..<n {
+    let _ = idx.add(row_of(data, i, dim))
+  }
+  assert_true(idx.q_frozen)
+  // Dequantized vectors sit within half a quantization step per dimension.
+  let approx = idx.get_vector(10)
+  let exact = row_of(data, 10, dim)
+  for j in 0..<dim {
+    assert_true((approx[j].to_double() - exact[j].to_double()).abs() < 0.01)
+  }
+  // Frozen store round-trips bit-exactly.
+  let restored = Hnsw::load(idx.save())
+  assert_true(restored.q_frozen)
+  let queries = gen_dataset(153UL, 4, dim, 0.0, 1.0)
+  for qi in 0..<4 {
+    assert_eq(
+      idx.search(row_of(queries, qi, dim), 5, ef=64),
+      restored.search(row_of(queries, qi, dim), 5, ef=64),
+    )
+  }
+  // An extreme vector clamps into the frozen bounds instead of misbehaving.
+  let wild : FixedArray[Float] = FixedArray::make(dim, 1000000.0)
+  let wild_id = idx.add(wild)
+  assert_eq(idx.search(wild, 1, ef=64)[0].id, wild_id)
+  // A pre-freeze payload also round-trips.
+  let small = Hnsw::new(dim, L2, params=HnswParams::new(storage=SQ8))
+  let _ = small.add(FixedArray::make(dim, 0.5))
+  let small2 = Hnsw::load(small.save())
+  assert_eq(small2.size(), 1)
+  assert_eq(small2.search(FixedArray::make(dim, 0.5), 1)[0].id, 0)
 }

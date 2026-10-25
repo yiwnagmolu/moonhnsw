@@ -140,7 +140,7 @@ pub fn Hnsw::save(self : Hnsw) -> FixedArray[Byte] {
   b.put_byte(b'N')
   b.put_byte(b'S')
   b.put_byte(b'W')
-  b.put_byte(b'\x04')
+  b.put_byte(b'\x05')
   b.put_u32(self.dim)
   b.put_byte(
     match self.distance {
@@ -164,11 +164,45 @@ pub fn Hnsw::save(self : Hnsw) -> FixedArray[Byte] {
   for lbl in self.labels {
     b.put_u64(lbl)
   }
+  // v5: storage precision. SQ8 stores its bounds and, once frozen, one byte
+  // per dimension instead of full floats.
+  b.put_byte(
+    match self.storage {
+      Float32 => b'\x00'
+      SQ8 => b'\x01'
+    },
+  )
+  if self.storage is SQ8 {
+    b.put_byte(if self.q_frozen { b'\x01' } else { b'\x00' })
+    let mut j = 0
+    while j < self.dim {
+      b.put_f32(self.q_mins.unsafe_get(j))
+      j += 1
+    }
+    j = 0
+    while j < self.dim {
+      b.put_f32(self.q_maxs.unsafe_get(j))
+      j += 1
+    }
+    j = 0
+    while j < self.dim {
+      b.put_f32(self.q_scales.unsafe_get(j))
+      j += 1
+    }
+  }
   let total = self.count * self.dim
-  let mut i = 0
-  while i < total {
-    b.put_f32(self.vectors.unsafe_get(i))
-    i += 1
+  if self.q_active() {
+    let mut i = 0
+    while i < total {
+      b.put_byte(self.quants.unsafe_get(i))
+      i += 1
+    }
+  } else {
+    let mut i = 0
+    while i < total {
+      b.put_f32(self.vectors.unsafe_get(i))
+      i += 1
+    }
   }
   for node in self.links {
     b.put_u32(node.length())
@@ -193,7 +227,11 @@ pub fn Hnsw::load(data : FixedArray[Byte]) -> Hnsw raise HnswError {
   let r = ByteReader::new(data)
   read_magic(r)
   let version = r.byte()
-  if version != 1 && version != 2 && version != 3 && version != 4 {
+  if version != 1 &&
+    version != 2 &&
+    version != 3 &&
+    version != 4 &&
+    version != 5 {
     raise CorruptData("unsupported format version \{version}")
   }
   let dim = r.u32()
@@ -263,12 +301,63 @@ pub fn Hnsw::load(data : FixedArray[Byte]) -> Hnsw raise HnswError {
       raise CorruptData("non-empty index must have a level")
     }
   }
+  // Version 5 carries the storage precision and, for SQ8, the quantization
+  // bounds and byte-per-dimension values.
+  let storage : Storage = if version >= 5 {
+    match r.byte() {
+      0 => Float32
+      1 => SQ8
+      code => raise CorruptData("unknown storage code \{code}")
+    }
+  } else {
+    Float32
+  }
+  let mut q_frozen = false
+  let q_mins : FixedArray[Float] = FixedArray::make(dim, 3.0e38)
+  let q_maxs : FixedArray[Float] = FixedArray::make(dim, -3.0e38)
+  let q_scales : FixedArray[Float] = FixedArray::make(dim, 1.0)
+  if version >= 5 && storage is SQ8 {
+    q_frozen = r.byte() == 1
+    let mut j = 0
+    while j < dim {
+      q_mins[j] = r.f32()
+      j += 1
+    }
+    j = 0
+    while j < dim {
+      q_maxs[j] = r.f32()
+      j += 1
+    }
+    j = 0
+    while j < dim {
+      q_scales[j] = r.f32()
+      j += 1
+    }
+  }
   let total = count * dim
-  let vectors : FixedArray[Float] = FixedArray::make(total, 0.0)
-  let mut i = 0
-  while i < total {
-    vectors[i] = r.f32()
-    i += 1
+  let quantized = storage is SQ8 && q_frozen
+  let vectors : FixedArray[Float] = if quantized {
+    FixedArray::make(0, 0.0)
+  } else {
+    FixedArray::make(total, 0.0)
+  }
+  let quants : FixedArray[Byte] = if quantized {
+    FixedArray::make(total, 0)
+  } else {
+    FixedArray::make(0, 0)
+  }
+  if quantized {
+    let mut i = 0
+    while i < total {
+      quants[i] = r.byte().to_byte()
+      i += 1
+    }
+  } else {
+    let mut i = 0
+    while i < total {
+      vectors[i] = r.f32()
+      i += 1
+    }
   }
   let links : Array[Array[Array[Int32]]] = []
   for _ in 0..<count {
@@ -306,7 +395,7 @@ pub fn Hnsw::load(data : FixedArray[Byte]) -> Hnsw raise HnswError {
   {
     dim,
     distance,
-    params: HnswParams::new(m~, ef_construction~, seed~),
+    params: HnswParams::new(m~, ef_construction~, seed~, storage~),
     normalize: match distance {
       Cosine => true
       _ => false
@@ -318,8 +407,25 @@ pub fn Hnsw::load(data : FixedArray[Byte]) -> Hnsw raise HnswError {
     alive_count,
     alive,
     labels,
+    storage,
     vectors,
-    capacity: count,
+    f_capacity: if quantized {
+      0
+    } else {
+      count
+    },
+    quants,
+    q_capacity: if quantized {
+      count
+    } else {
+      0
+    },
+    q_mins,
+    q_maxs,
+    q_scales,
+    q_frozen,
+    q_scratch: FixedArray::make(dim, 0),
+    f_scratch: FixedArray::make(dim, 0.0),
     links,
     visited: FixedArray::make(visited_len, 0),
     stamp: 0,
