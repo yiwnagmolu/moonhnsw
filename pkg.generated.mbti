@@ -72,6 +72,7 @@ pub fn Hnsw::copy(Self) -> Self raise HnswError
 pub fn Hnsw::delete(Self, Int32) -> Unit raise HnswError
 pub fn Hnsw::export_dot(Self, Int32) -> String raise HnswError
 pub fn Hnsw::find_by_label(Self, UInt64) -> Array[Int32]
+pub fn Hnsw::from_vectors(Int32, Distance, Array[FixedArray[Float]], params? : HnswParams) -> Self raise HnswError
 pub fn Hnsw::get_vector(Self, Int32) -> FixedArray[Float] raise HnswError
 pub fn Hnsw::ids(Self) -> Array[Int32]
 pub fn Hnsw::label_of(Self, Int32) -> UInt64 raise HnswError
@@ -83,8 +84,9 @@ pub fn Hnsw::save_bytes(Self) -> Bytes
 pub fn Hnsw::search(Self, FixedArray[Float], Int32, ef? : Int32) -> Array[Neighbor] raise HnswError
 pub fn Hnsw::search_batch(Self, Array[FixedArray[Float]], Int32, ef? : Int32) -> Array[Array[Neighbor]] raise HnswError
 pub fn Hnsw::search_filtered(Self, FixedArray[Float], Int32, ef? : Int32, filter~ : (Int32) -> Bool) -> Array[Neighbor] raise HnswError
-pub fn Hnsw::search_mmr(Self, FixedArray[Float], Int32, lambda? : Double, ef? : Int32) -> Array[Neighbor] raise HnswError
-pub fn Hnsw::search_radius(Self, FixedArray[Float], Double, max_results? : Int32) -> Array[Neighbor] raise HnswError
+pub fn Hnsw::search_mmr(Self, FixedArray[Float], Int32, lambda? : Double, ef? : Int32, filter? : (Int32) -> Bool) -> Array[Neighbor] raise HnswError
+pub fn Hnsw::search_radius(Self, FixedArray[Float], Double, max_results? : Int32, filter? : (Int32) -> Bool) -> Array[Neighbor] raise HnswError
+pub fn Hnsw::shrink_to_fit(Self) -> Unit
 pub fn Hnsw::size(Self) -> Int32
 pub fn Hnsw::stats(Self) -> HnswStats
 pub fn Hnsw::total(Self) -> Int32

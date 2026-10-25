@@ -72,8 +72,12 @@ fn Hnsw::observe_bounds(
 
 ///|
 /// Derives per-dimension scales from the observed ranges and re-quantizes
-/// every stored vector, dropping the full-precision copies.
-fn Hnsw::freeze_and_quantize_all(self : Hnsw) -> Unit {
+/// every stored vector plus the not-yet-counted `current` one, dropping the
+/// full-precision copies.
+fn Hnsw::freeze_and_quantize_all(
+  self : Hnsw,
+  current : FixedArray[Float],
+) -> Unit {
   let mut j = 0
   while j < self.dim {
     let range = self.q_maxs.unsafe_get(j).to_double() -
@@ -82,12 +86,13 @@ fn Hnsw::freeze_and_quantize_all(self : Hnsw) -> Unit {
     self.q_scales[j] = Float::from_double(s)
     j += 1
   }
-  self.ensure_quant_capacity(self.count)
+  self.ensure_quant_capacity(self.count + 1)
   let mut id = 0
   while id < self.count {
     self.quantize_into(self.vectors, id * self.dim, self.quants, id * self.dim)
     id += 1
   }
+  self.quantize_into(current, 0, self.quants, self.count * self.dim)
   self.q_frozen = true
   self.vectors = FixedArray::make(0, 0.0)
   self.f_capacity = 0

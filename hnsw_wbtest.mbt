@@ -1371,3 +1371,109 @@ test "randomized operations keep invariants and match brute force" {
   // The surviving index still round-trips.
   Hnsw::load(idx.save()).verify()
 }
+
+///|
+test "radius search and MMR compose with filters" {
+  let n = 100
+  let dim = 4
+  let data = gen_dataset(201UL, n, dim, 0.0, 1.0)
+  let idx = Hnsw::new(dim, L2)
+  for i in 0..<n {
+    let _ = idx.add(row_of(data, i, dim))
+  }
+  let q = row_of(data, 0, dim)
+  // Radius + filter: results inside the radius and matching the filter.
+  let radius = distance_between(L2, q, 0, data, 20 * dim, dim)
+  let res = idx.search_radius(q, radius, filter=fn(id) { id % 2 == 0 })
+  for r in res {
+    assert_true(r.id % 2 == 0)
+    assert_true(r.distance <= radius + 1.0e-9)
+  }
+  // MMR + filter: every selected result passes the filter.
+  let diverse = idx.search_mmr(q, 8, lambda=0.7, ef=128, filter=fn(id) {
+    id % 2 == 0
+  })
+  for r in diverse {
+    assert_true(r.id % 2 == 0)
+  }
+  // MMR + the all-true filter still equals plain search.
+  assert_eq(
+    idx.search_mmr(q, 5, lambda=0.0, ef=128, filter=fn(_) { true }),
+    idx.search(q, 5, ef=128),
+  )
+}
+
+///|
+test "shrink_to_fit releases slack without changing behavior" {
+  let n = 100
+  let dim = 8
+  let data = gen_dataset(202UL, n, dim, 0.0, 1.0)
+  let idx = Hnsw::new(dim, L2)
+  for i in 0..<n {
+    let _ = idx.add(row_of(data, i, dim))
+  }
+  assert_true(idx.f_capacity > n)
+  idx.shrink_to_fit()
+  assert_eq(idx.f_capacity, n)
+  assert_eq(idx.vectors.length(), n * dim)
+  let before = idx.search(row_of(data, 3, dim), 5, ef=64)
+  // Growing again after shrinking works.
+  let extra = idx.add(FixedArray::make(dim, 0.5))
+  assert_eq(extra, n)
+  let after = idx.search(row_of(data, 3, dim), 5, ef=64)
+  for j in 0..<before.length() {
+    assert_eq(before[j].id, after[j].id)
+    assert_eq(before[j].distance, after[j].distance)
+  }
+  // SQ8 post-freeze shrink compacts the byte store.
+  let sq8 = Hnsw::new(dim, L2, params=HnswParams::new(storage=SQ8))
+  for i in 0..<300 {
+    let _ = sq8.add(row_of(data, i % n, dim))
+  }
+  assert_true(sq8.q_frozen)
+  sq8.shrink_to_fit()
+  assert_eq(sq8.q_capacity, 300)
+  assert_true(sq8.search(FixedArray::make(dim, 0.5), 1).length() == 1)
+}
+
+///|
+test "from_vectors builds in one call" {
+  let dim = 4
+  let data = gen_dataset(203UL, 50, dim, 0.0, 1.0)
+  let vs : Array[FixedArray[Float]] = []
+  for i in 0..<50 {
+    vs.push(row_of(data, i, dim))
+  }
+  let idx = Hnsw::from_vectors(dim, L2, vs)
+  assert_eq(idx.size(), 50)
+  // Ids follow positions; labels default to the ids.
+  assert_eq(idx.label_of(7), 7UL)
+  let res = idx.search(row_of(data, 7, dim), 1, ef=64)
+  assert_eq(res[0].id, 7)
+}
+
+///|
+test "SQ8 supports radius search and compact" {
+  let n = 300
+  let dim = 8
+  let data = gen_dataset(204UL, n, dim, 0.0, 1.0)
+  let idx = Hnsw::new(dim, L2, params=HnswParams::new(storage=SQ8))
+  for i in 0..<n {
+    let _ = idx.add(row_of(data, i, dim))
+  }
+  assert_true(idx.q_frozen)
+  let q = row_of(data, 0, dim)
+  let radius = distance_between(L2, q, 0, data, 20 * dim, dim)
+  let res = idx.search_radius(q, radius)
+  for r in res {
+    assert_true(r.distance <= radius + 1.0e-6)
+  }
+  // Compaction re-quantizes the survivors and keeps answering searches.
+  let fresh = idx.compact().index
+  assert_true(fresh.q_frozen)
+  assert_eq(fresh.size(), n)
+  let a = idx.search(q, 5, ef=128)
+  let b = fresh.search(q, 5, ef=128)
+  assert_eq(a.length(), b.length())
+  assert_eq(a[0].id, b[0].id)
+}

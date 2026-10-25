@@ -174,7 +174,12 @@ pub fn Hnsw::new(
   {
     dim,
     distance,
-    params: HnswParams::new(m~, ef_construction=efc, seed=params.seed),
+    params: HnswParams::new(
+      m~,
+      ef_construction=efc,
+      seed=params.seed,
+      storage=params.storage,
+    ),
     normalize: match distance {
       Cosine => true
       _ => false
@@ -394,9 +399,9 @@ pub fn Hnsw::compact(self : Hnsw) -> CompactResult raise HnswError {
   let mapping : FixedArray[Int32] = FixedArray::make(self.count, -1)
   for id in 0..<self.count {
     if self.alive[id] {
-      let v : FixedArray[Float] = FixedArray::make(self.dim, 0.0)
-      FixedArray::unsafe_blit(v, 0, self.vectors, id * self.dim, self.dim)
-      mapping[id] = fresh.add_labeled(v, self.labels[id])
+      // get_vector dequantizes under SQ8; the fresh index re-quantizes with
+      // bounds learned from the surviving data.
+      mapping[id] = fresh.add_labeled(self.get_vector(id), self.labels[id])
     }
   }
   { index: fresh, mapping, }
@@ -448,6 +453,43 @@ pub fn Hnsw::ids(self : Hnsw) -> Array[Int32] {
     }
   }
   out
+}
+
+///|
+/// Releases unused capacity in the vector stores, reallocating them to the
+/// exact current size. Purely a memory optimization: ids, labels and search
+/// behavior are unchanged, and the stores grow again on the next insert.
+pub fn Hnsw::shrink_to_fit(self : Hnsw) -> Unit {
+  let total = self.count * self.dim
+  if self.storage is Float32 || !self.q_frozen {
+    if self.f_capacity > self.count {
+      let exact : FixedArray[Float] = FixedArray::make(total, 0.0)
+      FixedArray::unsafe_blit(exact, 0, self.vectors, 0, total)
+      self.vectors = exact
+      self.f_capacity = self.count
+    }
+  } else if self.q_capacity > self.count {
+    let exact : FixedArray[Byte] = FixedArray::make(total, 0)
+    FixedArray::unsafe_blit(exact, 0, self.quants, 0, total)
+    self.quants = exact
+    self.q_capacity = self.count
+  }
+}
+
+///|
+/// Builds an index from a list of vectors in one call. Ids follow the
+/// positions in `vectors`, and labels default to the ids.
+pub fn Hnsw::from_vectors(
+  dim : Int32,
+  distance : Distance,
+  vectors : Array[FixedArray[Float]],
+  params~ : HnswParams = HnswParams::new(),
+) -> Hnsw raise HnswError {
+  let idx = Hnsw::new(dim, distance, params~)
+  for v in vectors {
+    let _ = idx.add(v)
+  }
+  idx
 }
 
 ///|
@@ -924,7 +966,7 @@ fn Hnsw::insert(
     FixedArray::unsafe_blit(self.vectors, off, self.f_scratch, 0, self.dim)
     self.observe_bounds(self.f_scratch, 0)
     if id + 1 == FREEZE_AT {
-      self.freeze_and_quantize_all()
+      self.freeze_and_quantize_all(self.f_scratch)
     }
   } else {
     self.ensure_quant_capacity(id + 1)
@@ -1115,21 +1157,23 @@ pub fn Hnsw::search_batch(
 /// `lambda` blends the two objectives: 1.0 keeps only the most relevant
 /// candidates (identical to `search`), 0.0 orders purely by relevance too on
 /// the first pick and by anti-redundancy afterwards; 0.3-0.7 is the usual
-/// working range for de-duplicated RAG contexts. Similarity is the negated
-/// index distance, so every metric works unchanged.
+/// working range for de-duplicated RAG contexts. `filter` restricts the
+/// candidate pool. Similarity is the negated index distance, so every metric
+/// works unchanged.
 pub fn Hnsw::search_mmr(
   self : Hnsw,
   query : FixedArray[Float],
   k : Int32,
   lambda~ : Double = 0.5,
   ef~ : Int32 = 128,
+  filter~ : (Int32) -> Bool = fn(_) { true },
 ) -> Array[Neighbor] raise HnswError {
   if lambda < 0.0 || lambda > 1.0 {
     raise InvalidParams("lambda must be within [0, 1]")
   }
   // The pool must be wider than k, or near-duplicate candidates crowd out
   // any diversity the greedy pass could achieve.
-  let pool = self.search(query, ef, ef~)
+  let pool = self.search_filtered(query, ef, ef~, filter~)
   if lambda <= 0.0 || pool.length() <= 1 {
     let out : Array[Neighbor] = []
     for r in pool {
@@ -1184,12 +1228,14 @@ pub fn Hnsw::search_mmr(
 /// remaining candidate is farther than `radius`, so a neighbor just inside
 /// the radius can be missed when it is only reachable through farther nodes.
 /// Entry points are always expanded, which keeps exact-match queries
-/// (`radius = 0`) working.
+/// (`radius = 0`) working. `filter` restricts the result set (traversal is
+/// unaffected); deleted vectors never pass.
 pub fn Hnsw::search_radius(
   self : Hnsw,
   query : FixedArray[Float],
   radius : Double,
   max_results~ : Int32 = 64,
+  filter~ : (Int32) -> Bool = fn(_) { true },
 ) -> Array[Neighbor] raise HnswError {
   if query.length() != self.dim {
     raise DimMismatch(self.dim, query.length())
@@ -1214,7 +1260,14 @@ pub fn Hnsw::search_radius(
     query
   }
   let ep = self.descend_entry(q)
-  let cands = self.search_layer(q, [ep], max_results, 0, cutoff=radius)
+  let cands = self.search_layer(
+    q,
+    [ep],
+    max_results,
+    0,
+    cutoff=radius,
+    accept=filter,
+  )
   let out : Array[Neighbor] = []
   for (d, id) in cands {
     out.push({ id, distance: d, })
