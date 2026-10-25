@@ -70,6 +70,9 @@ moon add yiwnagmolu/moonhnsw
 | `Hnsw::search(query, k, ef~ = 64) -> Array[Neighbor]` | Approximate top-k, sorted by distance ascending. |
 | `Hnsw::search_filtered(query, k, ef~, filter)` | Top-k restricted by a filter closure over ids (metadata filtering). |
 | `Hnsw::search_mmr(query, k, lambda~, ef~)` | Maximal Marginal Relevance re-ranking for diverse results. |
+| `Hnsw::search_radius(query, radius, max_results~, filter~)` | Radius search; composes with the filter closure. |
+| `Hnsw::shrink_to_fit()` | Release store slack without rebuilding the graph. |
+| `Hnsw::from_vectors(dim, distance, vectors, params~)` | One-call construction from a list of vectors. |
 | `Hnsw::search_radius(query, radius, max_results~ = 64)` | All neighbors within a distance bound, ascending; approximate like top-k. |
 | `Hnsw::delete(id)` | Tombstone-delete a vector; it disappears from every search. |
 | `Hnsw::contains(id) -> Bool` | True when `id` is stored and not deleted. |

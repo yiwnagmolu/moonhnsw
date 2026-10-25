@@ -4,6 +4,24 @@ All notable changes to moonhnsw are documented here. Releases are tagged in
 the repository; the binary serialization format stays backward compatible
 (newer loaders accept older payloads).
 
+## 0.9.0 — 2026-10-25
+
+### Added
+
+- Filter composition: `search_radius` and `search_mmr` take the same filter
+  closure as `search_filtered`, completing the combinator matrix.
+- `Hnsw::shrink_to_fit`: reallocates the vector stores to the exact current
+  size — memory relief without the graph rebuild `compact` pays.
+- `Hnsw::from_vectors`: one-call construction from a list of vectors.
+
+### Fixed
+
+- Two latent SQ8 bugs, surfaced by new SQ8 radius/compact coverage:
+  `freeze_and_quantize_all` dropped the 256th vector (off-by-one against
+  the counter), and `Hnsw::new` silently reset `params.storage` to
+  `Float32`, so `compact`/`absorb` of an SQ8 index produced full-precision
+  copies. `compact` now re-quantizes survivors through `get_vector`.
+
 ## 0.8.1 — 2026-10-25
 
 ### Changed
