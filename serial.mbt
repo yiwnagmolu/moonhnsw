@@ -99,6 +99,27 @@ fn ByteBuf::put_bytes_bulk(
 }
 
 ///|
+/// Appends `count` little-endian u32 values from `src` in one
+/// bounds-checked pass.
+fn ByteBuf::put_i32_bulk(
+  self : ByteBuf,
+  src : Array[Int32],
+  count : Int32,
+) -> Unit {
+  self.ensure(count * 4)
+  let mut i = 0
+  while i < count {
+    let v = src.unsafe_get(i)
+    self.buf[self.len] = (v & 0xFF).to_byte()
+    self.buf[self.len + 1] = ((v >> 8) & 0xFF).to_byte()
+    self.buf[self.len + 2] = ((v >> 16) & 0xFF).to_byte()
+    self.buf[self.len + 3] = ((v >> 24) & 0xFF).to_byte()
+    self.len += 4
+    i += 1
+  }
+}
+
+///|
 fn ByteBuf::to_fixed(self : ByteBuf) -> FixedArray[Byte] {
   let out : FixedArray[Byte] = FixedArray::make(self.len, b'\x00')
   FixedArray::unsafe_blit(out, 0, self.buf, 0, self.len)
@@ -196,6 +217,29 @@ fn ByteReader::bytes_bulk(
 }
 
 ///|
+/// Reads `count` little-endian u32 values in one bounds-checked pass,
+/// appending them to `dst`.
+fn ByteReader::i32_bulk(
+  self : ByteReader,
+  dst : Array[Int32],
+  count : Int32,
+) -> Unit raise HnswError {
+  if self.pos + count * 4 > self.data.length() {
+    raise CorruptData("unexpected end of data")
+  }
+  let mut i = 0
+  while i < count {
+    let b0 = self.data.unsafe_get(self.pos).to_int() & 0xFF
+    let b1 = self.data.unsafe_get(self.pos + 1).to_int() & 0xFF
+    let b2 = self.data.unsafe_get(self.pos + 2).to_int() & 0xFF
+    let b3 = self.data.unsafe_get(self.pos + 3).to_int() & 0xFF
+    dst.push(b0 | (b1 << 8) | (b2 << 16) | (b3 << 24))
+    self.pos += 4
+    i += 1
+  }
+}
+
+///|
 fn read_magic(r : ByteReader) -> Unit raise HnswError {
   if r.byte() != b'M'.to_int() ||
     r.byte() != b'H'.to_int() ||
@@ -274,15 +318,18 @@ pub fn Hnsw::save(self : Hnsw) -> FixedArray[Byte] {
   } else {
     b.put_f32_bulk(self.vectors, total)
   }
+  // Flatten the link section into one u32 stream for a single bulk write.
+  let stream : Array[Int32] = []
   for node in self.links {
-    b.put_u32(node.length())
+    stream.push(node.length())
     for lst in node {
-      b.put_u32(lst.length())
+      stream.push(lst.length())
       for e in lst {
-        b.put_u32(e)
+        stream.push(e)
       }
     }
   }
+  b.put_i32_bulk(stream, stream.length())
   // v4 trailer: CRC-32 over everything above, so flipped bits and silent
   // truncation are detected on load instead of surfacing as bad searches.
   b.put_u32(crc32_of(b.buf, b.len).reinterpret_as_int())
@@ -434,12 +481,11 @@ pub fn Hnsw::load(data : FixedArray[Byte]) -> Hnsw raise HnswError {
         raise CorruptData("link list length out of range")
       }
       let lst : Array[Int32] = []
-      for _ in 0..<n_links {
-        let e = r.u32()
+      r.i32_bulk(lst, n_links)
+      for e in lst {
         if e < 0 || e >= count {
           raise CorruptData("link id out of range")
         }
-        lst.push(e)
       }
       node.push(lst)
     }
