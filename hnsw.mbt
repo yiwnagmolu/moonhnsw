@@ -71,13 +71,16 @@ pub fn HnswError::message(self : HnswError) -> String {
 pub struct Neighbor {
   id : Int32
   distance : Double
-} derive(Eq, @debug.Debug)
+} derive(Eq, @debug.Debug, ToJson)
 
 ///|
 pub extend Neighbor with Eq::{not_equal, equal}
 
 ///|
 pub extend Neighbor with @moonbitlang/core/debug.Debug::{to_repr}
+
+///|
+pub extend Neighbor with ToJson::{to_json}
 
 ///|
 /// An approximate nearest-neighbor index over fixed-dimension `f32` vectors,
@@ -222,13 +225,16 @@ pub struct HnswStats {
   /// Rough estimate of the heap memory held by the index, in bytes: vector
   /// storage, edge ids, per-list overhead and traversal markers.
   estimated_bytes : Int64
-} derive(Eq, @debug.Debug)
+} derive(Eq, @debug.Debug, ToJson)
 
 ///|
 pub extend HnswStats with Eq::{not_equal, equal}
 
 ///|
 pub extend HnswStats with @moonbitlang/core/debug.Debug::{to_repr}
+
+///|
+pub extend HnswStats with ToJson::{to_json}
 
 ///|
 /// Collects diagnostic statistics about the graph: how many nodes live on

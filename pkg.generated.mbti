@@ -86,17 +86,19 @@ pub struct HnswStats {
   nodes_per_level : Array[Int32]
   avg_degree_per_level : Array[Double]
   estimated_bytes : Int64
-} derive(Eq, @debug.Debug)
+} derive(Eq, ToJson, @debug.Debug)
 pub fn HnswStats::equal(Self, Self) -> Bool
 pub fn HnswStats::not_equal(Self, Self) -> Bool
+pub fn HnswStats::to_json(Self) -> Json
 pub fn HnswStats::to_repr(Self) -> @debug.Repr
 
 pub struct Neighbor {
   id : Int32
   distance : Double
-} derive(Eq, @debug.Debug)
+} derive(Eq, ToJson, @debug.Debug)
 pub fn Neighbor::equal(Self, Self) -> Bool
 pub fn Neighbor::not_equal(Self, Self) -> Bool
+pub fn Neighbor::to_json(Self) -> Json
 pub fn Neighbor::to_repr(Self) -> @debug.Repr
 
 // Type aliases

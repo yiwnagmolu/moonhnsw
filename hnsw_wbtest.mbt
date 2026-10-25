@@ -900,3 +900,25 @@ test "verify accepts healthy indexes and detects tampering" {
   let bad : Result[Unit, HnswError] = Ok(idx.verify()) catch { e => Err(e) }
   assert_true(bad is Err(_))
 }
+
+///|
+test "Neighbor and HnswStats render to JSON" {
+  let n : Neighbor = { id: 7, distance: -1.5, }
+  match n.to_json() {
+    Object(fields) => {
+      assert_eq(fields["id"], Json::number(7.0))
+      assert_eq(fields["distance"], Json::number(-1.5))
+    }
+    _ => abort("expected a JSON object")
+  }
+  let idx = Hnsw::new(3, L2)
+  let _ = idx.add(FixedArray::make(3, 1.0))
+  match idx.stats().to_json() {
+    Object(fields) => {
+      assert_eq(fields["count"], Json::number(1.0))
+      assert_true(fields.contains("estimated_bytes"))
+      assert_true(fields.contains("nodes_per_level"))
+    }
+    _ => abort("expected a JSON object")
+  }
+}
