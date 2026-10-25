@@ -1027,3 +1027,51 @@ test "construction after load matches the original index" {
     )
   }
 }
+
+///|
+test "filtered search returns only matching vectors" {
+  let n = 200
+  let dim = 8
+  let data = gen_dataset(131UL, n, dim, 0.0, 1.0)
+  let idx = Hnsw::new(dim, L2)
+  for i in 0..<n {
+    let _ = idx.add_labeled(row_of(data, i, dim), i.to_uint64())
+  }
+  let q = row_of(data, 3, dim)
+  // A filter that keeps everything must agree with plain search exactly.
+  assert_eq(
+    idx.search_filtered(q, 10, ef=64, filter=fn(_) { true }),
+    idx.search(q, 10, ef=64),
+  )
+  // A filter that rejects everything yields no results.
+  assert_eq(
+    idx.search_filtered(q, 10, ef=64, filter=fn(_) { false }).length(),
+    0,
+  )
+  // Even-id filtering: results respect the filter and match the exact
+  // top-10 among even ids.
+  let res = idx.search_filtered(q, 10, ef=200, filter=fn(id) { id % 2 == 0 })
+  assert_eq(res.length(), 10)
+  let pool : Array[(Double, Int32)] = []
+  for i in 0..<n {
+    if i % 2 == 0 {
+      pool.push((distance_between(L2, q, 0, data, i * dim, dim), i))
+    }
+  }
+  let _ = sort_pairs_ascending(pool)
+  for j in 0..<10 {
+    assert_eq(res[j].id, pool[j].1)
+    assert_eq(res[j].distance, pool[j].0)
+  }
+  // Label-style filtering — labels equal ids in this index.
+  let labeled = idx.search_filtered(q, 5, ef=128, filter=fn(id) { id >= 100 })
+  for r in labeled {
+    assert_true(idx.label_of(r.id) >= 100UL)
+  }
+  // Deleted vectors never pass, whatever the filter says.
+  let _ = idx.delete(6)
+  let res2 = idx.search_filtered(q, 10, ef=200, filter=fn(_) { true })
+  for r in res2 {
+    assert_true(r.id != 6)
+  }
+}

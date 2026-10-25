@@ -632,6 +632,9 @@ fn Hnsw::greedy_descent(
 /// is farther than the cutoff (radius search); entry points are always
 /// expanded once so that neighbors inside the radius are still discovered
 /// when every entry point itself lies outside it.
+///
+/// `accept` restricts which nodes may enter the result set (traversal is
+/// unaffected); `include_dead`, `cutoff` and `accept` combine.
 fn Hnsw::search_layer(
   self : Hnsw,
   q : FixedArray[Float],
@@ -640,6 +643,7 @@ fn Hnsw::search_layer(
   layer : Int32,
   include_dead~ : Bool = false,
   cutoff~ : Double = 1.0e308,
+  accept~ : (Int32) -> Bool = fn(_) { true },
 ) -> Array[(Double, Int32)] {
   let stamp = self.next_stamp()
   let visited = self.visited
@@ -650,7 +654,7 @@ fn Hnsw::search_layer(
     if e >= 0 && e < self.count && visited[e] != stamp {
       visited[e] = stamp
       candidates.push(d, e)
-      if d <= cutoff && (include_dead || self.alive[e]) {
+      if d <= cutoff && (include_dead || self.alive[e]) && accept(e) {
         results.push(d, e)
       }
       seeds.push(e)
@@ -663,7 +667,7 @@ fn Hnsw::search_layer(
         visited[nb] = stamp
         let d = self.dist_query(q, nb)
         candidates.push(d, nb)
-        if d <= cutoff && (include_dead || self.alive[nb]) {
+        if d <= cutoff && (include_dead || self.alive[nb]) && accept(nb) {
           results.push(d, nb)
         }
       }
@@ -687,7 +691,7 @@ fn Hnsw::search_layer(
         let d = self.dist_query(q, e)
         if d <= cutoff && (results.size() < ef || d < results.top().0) {
           candidates.push(d, e)
-          if include_dead || self.alive[e] {
+          if (include_dead || self.alive[e]) && accept(e) {
             results.push(d, e)
             if results.size() > ef {
               let _ = results.pop()
@@ -878,6 +882,42 @@ pub fn Hnsw::search(
   let r = self.descend_entry(q)
   let width = if ef < k { k } else { ef }
   let cands = self.search_layer(q, [r], width, 0)
+  let out : Array[Neighbor] = []
+  for (d, id) in cands {
+    if out.length() >= k {
+      break
+    }
+    out.push({ id, distance: d, })
+  }
+  out
+}
+
+///|
+/// Approximate top-k search restricted to vectors whose id passes `filter`.
+///
+/// Traversal walks the graph as usual; only the result set is filtered, so
+/// with a highly selective filter the call may return fewer than `k` results
+/// even when more matches exist — raise `ef` to compensate. Filter closures
+/// receive the internal id; combine with `label_of(id)` for label-based
+/// filtering. Deleted vectors never pass, regardless of the filter.
+pub fn Hnsw::search_filtered(
+  self : Hnsw,
+  query : FixedArray[Float],
+  k : Int32,
+  ef~ : Int32 = 64,
+  filter~ : (Int32) -> Bool,
+) -> Array[Neighbor] raise HnswError {
+  if query.length() != self.dim {
+    raise DimMismatch(self.dim, query.length())
+  }
+  if self.count == 0 || self.alive_count == 0 || k <= 0 {
+    return []
+  }
+  let q : FixedArray[Float] = FixedArray::make(self.dim, 0.0)
+  let _ = copy_normalized(query, 0, q, 0, self.dim, self.normalize)
+  let ep = self.descend_entry(q)
+  let width = if ef < k { k } else { ef }
+  let cands = self.search_layer(q, [ep], width, 0, accept=filter)
   let out : Array[Neighbor] = []
   for (d, id) in cands {
     if out.length() >= k {
