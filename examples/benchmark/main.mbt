@@ -198,6 +198,17 @@ fn bench_metric(
   println(
     "build           : \{fmt2(build_us / 1000.0)} ms total, \{fmt2(build_us / n.to_double())} us per vector",
   )
+  // Persistence round-trip.
+  let ts = @bench.monotonic_clock_start()
+  let payload = idx.save()
+  let save_us = @bench.monotonic_clock_end(ts)
+  let tl = @bench.monotonic_clock_start()
+  let reloaded = @moonhnsw.Hnsw::load(payload)
+  let load_us = @bench.monotonic_clock_end(tl)
+  println(
+    "persistence     : save \{fmt2(save_us / 1000.0)} ms, load \{fmt2(load_us / 1000.0)} ms (\{fmt2(payload.length().to_double() / 1048576.0)} MB payload)",
+  )
+  let _ = reloaded
   // Ground truth (not timed).
   let truths : Array[Array[Int32]] = []
   for qi in 0..<n_queries {
