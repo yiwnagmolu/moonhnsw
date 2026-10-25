@@ -4,7 +4,7 @@
 
 ///|
 test "heap min and max ordering" {
-  let h = Heap::new(true)
+  let h = Heap::{ items: [], is_min: true, }
   h.push(3.0, 3)
   h.push(1.0, 1)
   h.push(2.0, 2)
@@ -13,7 +13,7 @@ test "heap min and max ordering" {
   assert_eq(h.pop().1, 2)
   assert_eq(h.pop().1, 3)
   assert_eq(h.size(), 0)
-  let g = Heap::new(false)
+  let g = Heap::{ items: [], is_min: false, }
   g.push(1.0, 1)
   g.push(5.0, 5)
   g.push(3.0, 3)

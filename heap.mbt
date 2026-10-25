@@ -8,11 +8,6 @@ priv struct Heap {
 }
 
 ///|
-fn Heap::new(is_min : Bool) -> Heap {
-  { items: [], is_min, }
-}
-
-///|
 fn Heap::size(self : Heap) -> Int32 {
   self.items.length()
 }

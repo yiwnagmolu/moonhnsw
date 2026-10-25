@@ -145,6 +145,10 @@ pub struct Hnsw {
   q_scratch_reset : FixedArray[Float]
   /// Reusable scratch for the normalized copy of an inserted vector.
   f_scratch : FixedArray[Float]
+  /// Backing stores of the traversal heaps, drained after every use and
+  /// reused so searches do not allocate fresh arrays.
+  cand_items : Array[(Double, Int32)]
+  result_items : Array[(Double, Int32)]
   /// `links[node][layer]` is the neighbor id list of `node` on `layer`.
   links : Array[Array[Array[Int32]]]
   /// Visited markers for graph traversal, keyed by node id.
@@ -195,6 +199,8 @@ pub fn Hnsw::new(
     q_scratch_source: FixedArray::make(0, 0.0),
     q_scratch_reset: FixedArray::make(0, 0.0),
     f_scratch: FixedArray::make(dim, 0.0),
+    cand_items: [],
+    result_items: [],
     links: [],
     visited: FixedArray::make(0, 0),
     stamp: 0,
@@ -756,8 +762,10 @@ fn Hnsw::search_layer(
 ) -> Array[(Double, Int32)] {
   let stamp = self.next_stamp()
   let visited = self.visited
-  let candidates = Heap::new(true)
-  let results = Heap::new(false)
+  // Reuse the heap backing stores: to_sorted_ascending drains them, so they
+  // come back empty and keep their grown capacity.
+  let candidates = Heap::{ items: self.cand_items, is_min: true, }
+  let results = Heap::{ items: self.result_items, is_min: false, }
   let seeds : Array[Int32] = []
   for (d, e) in eps {
     if e >= 0 && e < self.count && visited[e] != stamp {
@@ -809,6 +817,11 @@ fn Hnsw::search_layer(
         }
       }
     }
+  }
+  // The candidate heap is never drained by the caller; empty it in place so
+  // the reused backing store starts clean next time.
+  while candidates.size() > 0 {
+    let _ = candidates.pop()
   }
   results.to_sorted_ascending()
 }
@@ -1010,9 +1023,16 @@ pub fn Hnsw::search(
   if self.count == 0 || self.alive_count == 0 || k <= 0 {
     return []
   }
-  let q : FixedArray[Float] = FixedArray::make(self.dim, 0.0)
   self.q_scratch_source = self.q_scratch_reset
-  let _ = copy_normalized(query, 0, q, 0, self.dim, self.normalize)
+  // L2/IP search the caller's array directly; only Cosine needs a
+  // normalized copy.
+  let q : FixedArray[Float] = if self.normalize {
+    let tmp : FixedArray[Float] = FixedArray::make(self.dim, 0.0)
+    let _ = copy_normalized(query, 0, tmp, 0, self.dim, true)
+    tmp
+  } else {
+    query
+  }
   let r = self.descend_entry(q)
   let width = if ef < k { k } else { ef }
   let cands = self.search_layer(q, [r], width, 0)
@@ -1047,9 +1067,16 @@ pub fn Hnsw::search_filtered(
   if self.count == 0 || self.alive_count == 0 || k <= 0 {
     return []
   }
-  let q : FixedArray[Float] = FixedArray::make(self.dim, 0.0)
   self.q_scratch_source = self.q_scratch_reset
-  let _ = copy_normalized(query, 0, q, 0, self.dim, self.normalize)
+  // L2/IP search the caller's array directly; only Cosine needs a
+  // normalized copy.
+  let q : FixedArray[Float] = if self.normalize {
+    let tmp : FixedArray[Float] = FixedArray::make(self.dim, 0.0)
+    let _ = copy_normalized(query, 0, tmp, 0, self.dim, true)
+    tmp
+  } else {
+    query
+  }
   let ep = self.descend_entry(q)
   let width = if ef < k { k } else { ef }
   let cands = self.search_layer(q, [ep], width, 0, accept=filter)
@@ -1176,9 +1203,16 @@ pub fn Hnsw::search_radius(
   if radius < 0.0 {
     raise InvalidParams("radius must be >= 0")
   }
-  let q : FixedArray[Float] = FixedArray::make(self.dim, 0.0)
   self.q_scratch_source = self.q_scratch_reset
-  let _ = copy_normalized(query, 0, q, 0, self.dim, self.normalize)
+  // L2/IP search the caller's array directly; only Cosine needs a
+  // normalized copy.
+  let q : FixedArray[Float] = if self.normalize {
+    let tmp : FixedArray[Float] = FixedArray::make(self.dim, 0.0)
+    let _ = copy_normalized(query, 0, tmp, 0, self.dim, true)
+    tmp
+  } else {
+    query
+  }
   let ep = self.descend_entry(q)
   let cands = self.search_layer(q, [ep], max_results, 0, cutoff=radius)
   let out : Array[Neighbor] = []
