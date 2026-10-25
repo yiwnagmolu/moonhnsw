@@ -108,18 +108,20 @@ Distance conventions (smaller = closer):
 
 ## Benchmarks
 
-Measured with the bundled `examples/benchmark` on uniform random data (n=2000, dim=32, m=16, ef_construction=200, 100 queries, k=10), executed on the **wasm-gc** backend via `moonrun` on Windows — a conservative setting; the native backend is expected to be substantially faster.
+Measured with the bundled `examples/benchmark` on uniform random data (n=2000, dim=32, m=16, ef_construction=200, 100 queries, k=10), executed on the **wasm-gc** backend via `moonrun` on Windows — a conservative setting; the native backend is expected to be substantially faster. Speedups are against a fair single-pass brute-force top-k in the same process; `dists/query` counts distance computations, the hardware-independent metric.
 
 | Metric | n | Build | ef=64 | ef=128 | ef=256 |
 | --- | --- | --- | --- | --- | --- |
-| L2 | 2 000 | 1014 ms | recall 1.00, 5003 q/s | recall 1.00, 3253 q/s | recall 1.00, 1829 q/s |
-| InnerProduct | 2 000 | 1281 ms | recall 1.00, 6224 q/s | recall 1.00, 3781 q/s | recall 1.00, 2250 q/s |
-| Cosine | 2 000 | 965 ms | recall 1.00, 5168 q/s | recall 1.00, 3225 q/s | recall 1.00, 1939 q/s |
-| L2 (scale) | 10 000 | 9554 ms | recall 0.97, 3003 q/s | recall 1.00, 1328 q/s | recall 1.00, 761 q/s |
-| L2 (large) | 100 000 | 184.0 s | recall 0.83, 1992 q/s | recall 0.95, 885 q/s | recall 1.00, 550 q/s |
-| L2 SQ8 | 2 000 | 1458 ms | recall 0.99, 2959 q/s | recall 0.99, 1892 q/s | recall 0.99, 1315 q/s |
+| L2 | 2 000 | 1193 ms | recall 1.00, 4054 q/s (0.72x brute, 980 dists) | recall 1.00, 2544 q/s (0.45x) | recall 1.00, 1534 q/s (0.27x) |
+| InnerProduct | 2 000 | 1443 ms | recall 1.00, 4776 q/s (0.73x brute, 891 dists) | recall 1.00, 2858 q/s (0.43x) | recall 1.00, 1701 q/s (0.26x) |
+| Cosine | 2 000 | 1164 ms | recall 1.00, 4257 q/s (0.65x brute, 970 dists) | recall 1.00, 2147 q/s (0.33x) | recall 1.00, 1430 q/s (0.22x) |
+| L2 (scale) | 10 000 | 11403 ms | recall 0.97, 3094 q/s (2.28x brute, 1390 dists) | recall 1.00, 1618 q/s (1.19x) | recall 1.00, 923 q/s (0.68x) |
+| L2 (large) | 100 000 | 210 s | recall 0.83, 2041 q/s (**13.9x brute**, 1687 dists) | recall 0.95, 872 q/s (6.0x) | recall 1.00, 481 q/s (3.3x) |
+| L2 SQ8 | 2 000 | 1430 ms | recall 0.99, 3581 q/s (0.56x brute) | recall 0.99, 2212 q/s (0.34x) | recall 0.99, 1391 q/s (0.22x) |
 
-At 10k vectors the ef trade-off becomes visible: `ef=64` reaches 0.97 recall, `ef=128` already 1.00. At 100k the graph is 4 layers tall (~30 MB estimated); random data needs `ef=256` for exact recall — raise `m` if you want the same recall at lower `ef`. SQ8 shrinks the estimated index from 0.53 MB to 0.34 MB at this size (the vector store itself drops 4x) at 0.99 recall, and builds ~44% slower because of the quantize/freeze pass.
+**Read the speedup column honestly:** graph indexes only pay off above ~10k vectors — at n=2000 a tight brute-force loop wins (true of every ANN library; the crossover is where ANN's sub-linear traversal beats its per-hop indirection). At n=100k the graph touches **1.7% of the dataset** per query (1687 vs 100000 distances) for 0.83 recall at ef=64, which is where the 13.9x wall-clock speedup comes from; the distance ratio (59x) shows the headroom a native backend with SIMD would convert into further wall-clock gains.
+
+At 10k vectors the ef trade-off becomes visible: `ef=64` reaches 0.97 recall, `ef=128` already 1.00. At 100k the graph is 4 layers tall (~30 MB estimated); random data needs `ef=256` for exact recall — raise `m` if you want the same recall at lower `ef`. SQ8 shrinks the estimated index from 0.53 MB to 0.34 MB at this size (the vector store itself drops 4x) at 0.99 recall, and builds ~20% slower because of the quantize/freeze pass.
 
 Recall is verified against exact brute-force ground truth in the test suite for all three metrics (recall@10 >= 0.9 on random datasets).
 
@@ -129,6 +131,12 @@ Run it yourself:
 moon run --target wasm-gc examples/benchmark
 moon run --target wasm-gc examples/benchmark-large
 ```
+
+## When to use / production readiness
+
+**Good fit** — embedded, single-writer semantic search and RAG contexts at 10k–500k vectors on wasm or native; dedup and clustering via `search_radius`; disk-backed indexes loaded via `load` (CRC-checked); memory-constrained deployments via SQ8 (4x smaller store at ~0.99 recall).
+
+**Know the boundaries** — indexes are single-threaded and not concurrency-safe (wrap in your own actor/lock); below ~10k vectors a plain brute-force scan is faster (the `distance` helper is all you need); deletion is tombstone-based, so `compact` (a full rebuild) is the way to reclaim space; benchmarks here are wasm-gc on one machine — profile on your target backend before committing to SLAs. No incremental persistence: `save` writes the full index.
 
 ## Implementation notes
 

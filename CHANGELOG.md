@@ -4,6 +4,25 @@ All notable changes to moonhnsw are documented here. Releases are tagged in
 the repository; the binary serialization format stays backward compatible
 (newer loaders accept older payloads).
 
+## 0.10.0 — 2026-10-26
+
+### Added
+
+- `Hnsw::distance_computations()`: distance evaluations of the last search,
+  the hardware-independent efficiency metric of the graph (reset at each
+  search entry point).
+- Benchmarks report dists/query and speedup against a fair single-pass
+  brute-force baseline, plus a timed brute column in the 100k example.
+- README gains a "When to use / production readiness" section stating the
+  honest crossover: graph search wins above ~10k vectors (13.9x brute at
+  100k, touching 1.7% of the dataset at ef=64) and loses below it.
+
+### Changed
+
+- The brute-force baseline in benchmarks switched from k argmin passes
+  (k*n distances) to a single-pass running top-k; previous speedup figures
+  were overstated by roughly k times.
+
 ## 0.9.2 — 2026-10-26
 
 ### Changed
