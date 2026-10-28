@@ -31,6 +31,8 @@ the repository; the binary serialization format stays backward compatible
   trailing data and invalid graph structure during load. The constructor and
   loader now cap dimensions at 1,000,000 and `m` at 1,073,741,823 to avoid
   invalid allocation and link-budget arithmetic.
+- Count equal-distance neighbors as correct in empirical recall, and reject
+  invalid SQ8 quantization metadata even when the payload checksum is valid.
 
 ### Ecosystem check
 

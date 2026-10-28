@@ -142,6 +142,27 @@ pub fn Hnsw::verify(self : Hnsw) -> Unit raise HnswError {
     self.f_scratch.length() != self.dim {
     raise CorruptData("scratch or bounds size mismatch")
   }
+  if self.storage is SQ8 {
+    if self.q_frozen != (self.count >= FREEZE_AT) {
+      raise CorruptData("SQ8 frozen state inconsistent with vector count")
+    }
+    if self.q_frozen {
+      for j in 0..<self.dim {
+        let lo = self.q_mins[j].to_double()
+        let hi = self.q_maxs[j].to_double()
+        let scale = self.q_scales[j].to_double()
+        if !(lo > -1.0e308 &&
+          lo < 1.0e308 &&
+          hi > -1.0e308 &&
+          hi < 1.0e308 &&
+          lo <= hi &&
+          scale > 0.0 &&
+          scale < 1.0e308) {
+          raise CorruptData("invalid SQ8 quantization bounds or scale")
+        }
+      }
+    }
+  }
   if self.storage is SQ8 && self.q_frozen {
     if self.quants.length() < self.count * self.dim || !self.vectors.is_empty() {
       raise CorruptData("quantized store inconsistent")

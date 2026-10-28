@@ -26,8 +26,8 @@ pub extend AdaptiveSearchResult with ToJson::{to_json}
 /// `ef_max` is reached. The first width is `ef_start`; both widths are
 /// raised to at least `k`, and widening stops at the number of live vectors.
 ///
-/// This bounds each graph search by its beam width, which can be useful when
-/// a selective filter would otherwise make filter-aware traversal inspect
+/// Each round limits the candidate pool to its beam width, which can be useful
+/// when a selective filter would otherwise make filter-aware traversal inspect
 /// most of the graph. Results remain approximate: an unseen matching vector
 /// may be nearer, and the call may return fewer than `k` matches at the cap.
 /// `distance_computations()` reports the sum across rounds after this call.

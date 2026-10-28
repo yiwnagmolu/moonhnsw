@@ -1597,3 +1597,47 @@ test "loader checks CRC before allocations and rejects valid-CRC junk" {
   }
   assert_true(extra is Err(CorruptData(_)))
 }
+
+///|
+test "ef calibration counts tied exact neighbors by distance" {
+  let idx = Hnsw::new(1, L2)
+  let q : FixedArray[Float] = FixedArray::from_array([1.0])
+  let _ = idx.add(q)
+  let _ = idx.add(q)
+  // Make the equally close second vector the only reachable search result.
+  // An exact scan sees id 0 first, but either id is a valid top-1 answer.
+  idx.links[0] = [[]]
+  idx.links[1] = [[]]
+  idx.entry = 1
+  idx.max_level = 0
+  idx.verify()
+  assert_eq(idx.search(q, 1, ef=1)[0].id, 1)
+  let calibration = idx.calibrate_ef([q], 1, 1.0, [1])
+  assert_eq(calibration.trials[0].recall, 1.0)
+  assert_true(calibration.met_target)
+}
+
+///|
+test "loader rejects invalid SQ8 scale with a valid checksum" {
+  let idx = Hnsw::new(1, L2, params=HnswParams::new(storage=SQ8))
+  for i in 0..<256 {
+    let _ = idx.add(FixedArray::from_array([Float::from_double(i.to_double())]))
+  }
+  let bytes = idx.save()
+  // v5 header (47), alive flags, labels, storage/frozen flags, then one min
+  // and max f32 value before the first scale f32.
+  let scale_offset = 47 + idx.count + idx.count * 8 + 2 + idx.dim * 8
+  for j in 0..<4 {
+    bytes[scale_offset + j] = b'\x00'
+  }
+  let tail = bytes.length() - 4
+  let crc = crc32_of(bytes, tail)
+  bytes[tail] = crc.to_byte()
+  bytes[tail + 1] = (crc >> 8).to_byte()
+  bytes[tail + 2] = (crc >> 16).to_byte()
+  bytes[tail + 3] = (crc >> 24).to_byte()
+  let loaded : Result[Hnsw, HnswError] = Ok(Hnsw::load(bytes)) catch {
+    e => Err(e)
+  }
+  assert_true(loaded is Err(CorruptData(_)))
+}

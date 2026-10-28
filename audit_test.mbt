@@ -51,4 +51,8 @@ test "public api: batch distance count sums every query" {
   assert_eq(idx.distance_computations(), count_a + count_b)
   let _ = idx.search_batch([], 3)
   assert_eq(idx.distance_computations(), 0L)
+  let _ = idx.search(a, 3)
+  assert_true(idx.distance_computations() > 0L)
+  assert_eq(idx.search_mmr(a, 0).length(), 0)
+  assert_eq(idx.distance_computations(), 0L)
 }

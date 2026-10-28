@@ -4,7 +4,8 @@ pub struct EfTrial {
   /// Beam width tested (must be at least k).
   ef : Int32
   /// Mean recall@k across the representative queries, against an exact scan
-  /// of live vectors using the index's own distance semantics.
+  /// of live vectors using the index's own distance semantics. Neighbors tied
+  /// at the exact kth distance count as correct.
   recall : Double
   /// Mean distance computations per approximate query, excluding the exact
   /// ground-truth scan.
@@ -51,6 +52,7 @@ pub extend EfCalibration with ToJson::{to_json}
 /// must be nonempty, strictly increasing, and each value at least `k`.
 /// Ground truth is an exact top-k scan of non-deleted vectors using the same
 /// metric and, for frozen SQ8, the same byte-distance computation as search.
+/// Any result tied at the exact kth distance counts as a correct neighbor.
 /// The stored `distance_computations()` after this call is the total work of
 /// the approximate trial searches, excluding ground-truth scans.
 pub fn Hnsw::calibrate_ef(
@@ -79,7 +81,7 @@ pub fn Hnsw::calibrate_ef(
     }
   }
   let truth_k = if k < self.alive_count { k } else { self.alive_count }
-  let truth : Array[Array[Int32]] = []
+  let thresholds : Array[Double] = []
   for query in queries {
     self.q_scratch_source = self.q_scratch_reset
     let q : FixedArray[Float] = if self.normalize {
@@ -101,11 +103,7 @@ pub fn Hnsw::calibrate_ef(
         }
       }
     }
-    let ids : Array[Int32] = []
-    for (_, id) in nearest.to_sorted_ascending() {
-      ids.push(id)
-    }
-    truth.push(ids)
+    thresholds.push(nearest.top().0)
   }
   let trials : Array[EfTrial] = []
   let mut selected_ef = efs[efs.length() - 1]
@@ -118,11 +116,8 @@ pub fn Hnsw::calibrate_ef(
       let results = self.search(queries[i], k, ef~)
       calls += self.dist_calls
       for r in results {
-        for id in truth[i] {
-          if r.id == id {
-            hits += 1
-            break
-          }
+        if r.distance <= thresholds[i] {
+          hits += 1
         }
       }
     }

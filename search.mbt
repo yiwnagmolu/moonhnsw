@@ -352,6 +352,9 @@ pub fn Hnsw::search_mmr(
   if !(lambda >= 0.0 && lambda <= 1.0) {
     raise InvalidParams("lambda must be within [0, 1]")
   }
+  if k <= 0 {
+    return self.search_filtered(query, k, ef~, filter~)
+  }
   if lambda == 1.0 {
     return self.search_filtered(query, k, ef~, filter~)
   }
