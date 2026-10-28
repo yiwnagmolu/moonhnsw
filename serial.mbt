@@ -525,6 +525,9 @@ pub fn Hnsw::load(data : FixedArray[Byte]) -> Hnsw raise HnswError {
       if n_links < 0 || n_links > count {
         raise CorruptData("link list length out of range")
       }
+      if n_links.to_int64() * 4L > (data.length() - r.pos).to_int64() {
+        raise CorruptData("link list exceeds payload length")
+      }
       let lst : Array[Int32] = []
       r.i32_bulk(lst, n_links)
       for e in lst {
