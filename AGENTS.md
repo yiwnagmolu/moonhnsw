@@ -20,10 +20,11 @@ pure MoonBit HNSW approximate nearest-neighbor search library (module
   - `crc.mbt` — the IEEE CRC-32 kernel.
   - `rng.mbt` — the SplitMix64 level-draw generator.
   - `heap.mbt` — the internal binary heap.
+  - `calibrate.mbt` — empirical ef tuning against exact stored-vector ground truth.
 - `hnsw_wbtest.mbt` holds whitebox tests (internal helpers, brute-force
-  recall harness, tamper and stress tests); `api_test.mbt` and `audit_test.mbt`
-  hold blackbox tests that exercise the package the way an external user would,
-  with package-qualified names.
+  recall harness, tamper and stress tests); `api_test.mbt`, `audit_test.mbt`,
+  and `calibrate_test.mbt` hold blackbox tests that exercise the package the
+  way an external user would, with package-qualified names.
 - `examples/benchmark` runs in CI as a smoke test; `examples/benchmark-large`
   (100k vectors) is for occasional manual runs only — never add it to CI.
 

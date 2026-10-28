@@ -34,6 +34,26 @@ pub(all) enum Distance {
 pub fn Distance::equal(Self, Self) -> Bool
 pub fn Distance::not_equal(Self, Self) -> Bool
 
+pub struct EfCalibration {
+  selected_ef : Int32
+  met_target : Bool
+  trials : Array[EfTrial]
+} derive(Eq, ToJson, @debug.Debug)
+pub fn EfCalibration::equal(Self, Self) -> Bool
+pub fn EfCalibration::not_equal(Self, Self) -> Bool
+pub fn EfCalibration::to_json(Self) -> Json
+pub fn EfCalibration::to_repr(Self) -> @debug.Repr
+
+pub struct EfTrial {
+  ef : Int32
+  recall : Double
+  avg_distance_computations : Double
+} derive(Eq, ToJson, @debug.Debug)
+pub fn EfTrial::equal(Self, Self) -> Bool
+pub fn EfTrial::not_equal(Self, Self) -> Bool
+pub fn EfTrial::to_json(Self) -> Json
+pub fn EfTrial::to_repr(Self) -> @debug.Repr
+
 pub struct Hnsw {
   dim : Int32
   distance : Distance
@@ -70,6 +90,7 @@ pub struct Hnsw {
 pub fn Hnsw::absorb(Self, Self) -> FixedArray[Int32] raise HnswError
 pub fn Hnsw::add(Self, FixedArray[Float]) -> Int32 raise HnswError
 pub fn Hnsw::add_labeled(Self, FixedArray[Float], UInt64) -> Int32 raise HnswError
+pub fn Hnsw::calibrate_ef(Self, Array[FixedArray[Float]], Int32, Double, Array[Int32]) -> EfCalibration raise HnswError
 pub fn Hnsw::compact(Self) -> CompactResult raise HnswError
 pub fn Hnsw::contains(Self, Int32) -> Bool
 pub fn Hnsw::copy(Self) -> Self raise HnswError
