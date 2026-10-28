@@ -195,7 +195,13 @@ pub fn Hnsw::new(
   if dim < 1 {
     raise InvalidParams("dim must be >= 1")
   }
+  if dim > 1000000 {
+    raise InvalidParams("dim must be <= 1000000")
+  }
   let m = if params.m < 2 { 2 } else { params.m }
+  if m > 1073741823 {
+    raise InvalidParams("m is too large")
+  }
   let efc = if params.ef_construction < 1 { 1 } else { params.ef_construction }
   {
     dim,

@@ -371,9 +371,20 @@ pub fn Hnsw::load(data : FixedArray[Byte]) -> Hnsw raise HnswError {
     version != 5 {
     raise CorruptData("unsupported format version \{version}")
   }
+  // Validate the trailer before trusting payload lengths for allocations.
+  if version >= 4 {
+    if data.length() < 10 {
+      raise CorruptData("payload too short for checksum")
+    }
+    let trailer_pos = data.length() - 4
+    let trailer = ByteReader::{ data, pos: trailer_pos, }
+    if trailer.u32() != crc32_of(data, trailer_pos).reinterpret_as_int() {
+      raise CorruptData("checksum mismatch")
+    }
+  }
   let dim = r.u32()
-  if dim < 1 {
-    raise CorruptData("dim must be >= 1")
+  if dim < 1 || dim > 1000000 {
+    raise CorruptData("dim out of range")
   }
   let metric_code = r.byte()
   let distance = match metric_code {
@@ -389,6 +400,12 @@ pub fn Hnsw::load(data : FixedArray[Byte]) -> Hnsw raise HnswError {
   let max_level = r.u32()
   let count = r.u32()
   let rng_state = r.u64()
+  if count < 0 || count.to_int64() * dim.to_int64() > 2147483647L {
+    raise CorruptData("vector count or dimensions out of range")
+  }
+  if count.to_int64() * dim.to_int64() > data.length().to_int64() {
+    raise CorruptData("vector data exceeds payload length")
+  }
   // Version 2 carries one alive byte per vector (tombstone deletion);
   // version 1 payloads predate deletion and are fully alive.
   let alive : FixedArray[Bool] = FixedArray::make(count, true)
@@ -423,7 +440,7 @@ pub fn Hnsw::load(data : FixedArray[Byte]) -> Hnsw raise HnswError {
       i += 1
     }
   }
-  if m < 2 || ef_construction < 1 {
+  if m < 2 || m > 1073741823 || ef_construction < 1 {
     raise CorruptData("invalid graph parameters")
   }
   if count == 0 {
@@ -434,7 +451,7 @@ pub fn Hnsw::load(data : FixedArray[Byte]) -> Hnsw raise HnswError {
     if entry < 0 || entry >= count {
       raise CorruptData("entry point out of range")
     }
-    if max_level < 0 {
+    if max_level < 0 || max_level > 1024 {
       raise CorruptData("non-empty index must have a level")
     }
   }
@@ -454,7 +471,11 @@ pub fn Hnsw::load(data : FixedArray[Byte]) -> Hnsw raise HnswError {
   let q_maxs : FixedArray[Float] = FixedArray::make(dim, -3.0e38)
   let q_scales : FixedArray[Float] = FixedArray::make(dim, 1.0)
   if version >= 5 && storage is SQ8 {
-    q_frozen = r.byte() == 1
+    let frozen_flag = r.byte()
+    if frozen_flag > 1 {
+      raise CorruptData("invalid SQ8 frozen flag")
+    }
+    q_frozen = frozen_flag == 1
     let mut j = 0
     while j < dim {
       q_mins[j] = r.f32()
@@ -473,6 +494,10 @@ pub fn Hnsw::load(data : FixedArray[Byte]) -> Hnsw raise HnswError {
   }
   let total = count * dim
   let quantized = storage is SQ8 && q_frozen
+  let value_bytes = if quantized { 1L } else { 4L }
+  if total.to_int64() * value_bytes > (data.length() - r.pos).to_int64() {
+    raise CorruptData("vector data exceeds payload length")
+  }
   let vectors : FixedArray[Float] = if quantized {
     FixedArray::make(0, 0.0)
   } else {
@@ -511,16 +536,18 @@ pub fn Hnsw::load(data : FixedArray[Byte]) -> Hnsw raise HnswError {
     }
     links.push(node)
   }
-  // v4 payloads end with a CRC-32 over every preceding byte.
+  // The checksum was checked before allocation. Consume exactly its trailer
+  // and reject extra bytes even when the checksum is valid.
   if version >= 4 {
-    let body_crc = crc32_of(r.data, r.pos)
-    let stored = r.u32()
-    if stored != body_crc.reinterpret_as_int() {
-      raise CorruptData("checksum mismatch")
+    if r.pos != data.length() - 4 {
+      raise CorruptData("trailing data before checksum")
     }
+    let _ = r.u32()
+  } else if r.pos != data.length() {
+    raise CorruptData("trailing data")
   }
   let visited_len = if count < 64 { 64 } else { count }
-  {
+  let idx = Hnsw::{
     dim,
     distance,
     params: HnswParams::new(m~, ef_construction~, seed~, storage~),
@@ -564,4 +591,6 @@ pub fn Hnsw::load(data : FixedArray[Byte]) -> Hnsw raise HnswError {
     rng_state,
     dist_calls: 0L,
   }
+  idx.verify()
+  idx
 }

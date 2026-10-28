@@ -22,6 +22,9 @@ pub fn Hnsw::upsert_labeled(
   vector : FixedArray[Float],
   label : UInt64,
 ) -> Int32 raise HnswError {
+  if vector.length() != self.dim {
+    raise DimMismatch(self.dim, vector.length())
+  }
   for old in self.find_by_label(label) {
     let _ = self.delete(old)
   }
@@ -221,8 +224,9 @@ pub fn Hnsw::export_dot(self : Hnsw, layer : Int32) -> String raise HnswError {
 /// Deletes the vector with the given id using tombstone semantics.
 ///
 /// The node stays in the graph (preserving connectivity and the id space)
-/// but no longer appears in search results, and new insertions never link
-/// to it. Deleting an unknown or already-deleted id raises `InvalidId`.
+/// but no longer appears in search results. New insertions may still link to
+/// it to preserve connectivity. Deleting an unknown or already-deleted id
+/// raises `InvalidId`.
 pub fn Hnsw::delete(self : Hnsw, id : Int32) -> Unit raise HnswError {
   if id < 0 || id >= self.count || !self.alive[id] {
     raise InvalidId(id)

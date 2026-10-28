@@ -1212,8 +1212,8 @@ test "MMR search trades relevance for diversity" {
     }
   }
   assert_true(copies_plain >= 5)
-  // High-lambda MMR spreads out instead.
-  let diverse = idx.search_mmr(q, 6, lambda=1.0, ef=128)
+  // Low-lambda MMR spreads out instead.
+  let diverse = idx.search_mmr(q, 6, lambda=0.0, ef=128)
   assert_eq(diverse.length(), 6)
   let mut copies_mmr = 0
   for r in diverse {
@@ -1222,8 +1222,9 @@ test "MMR search trades relevance for diversity" {
     }
   }
   assert_true(copies_mmr <= 2)
-  // Lambda 0 keeps the plain relevance ordering.
-  assert_eq(idx.search_mmr(q, 5, lambda=0.0, ef=128), idx.search(q, 5, ef=128))
+  // Lambda 1 keeps the plain relevance ordering.
+  assert_eq(idx.search_mmr(q, 5, lambda=1.0, ef=128), idx.search(q, 5, ef=128))
+  assert_eq(idx.search_mmr(q, 20, lambda=0.5, ef=5).length(), 20)
   // A single result is always the nearest neighbor.
   assert_eq(
     idx.search_mmr(q, 1, lambda=0.3, ef=128)[0].id,
@@ -1396,9 +1397,9 @@ test "radius search and MMR compose with filters" {
   for r in diverse {
     assert_true(r.id % 2 == 0)
   }
-  // MMR + the all-true filter still equals plain search.
+  // Pure-relevance MMR + the all-true filter still equals plain search.
   assert_eq(
-    idx.search_mmr(q, 5, lambda=0.0, ef=128, filter=fn(_) { true }),
+    idx.search_mmr(q, 5, lambda=1.0, ef=128, filter=fn(_) { true }),
     idx.search(q, 5, ef=128),
   )
 }
@@ -1511,4 +1512,88 @@ test "Show renders errors and neighbors for direct interpolation" {
   let ntext = "\{n}"
   assert_true(ntext.contains("Neighbor("))
   assert_true(ntext.contains("7"))
+}
+
+///|
+test "legacy v1 through v4 payloads still load" {
+  for version in 1..<=4 {
+    let b = ByteBuf::new()
+    for ch in [b'M', b'H', b'N', b'S', b'W'] {
+      b.put_byte(ch)
+    }
+    b.put_byte(version.to_byte())
+    b.put_u32(2) // dim
+    b.put_byte(b'\x00') // L2
+    b.put_u32(16) // m
+    b.put_u32(200) // ef_construction
+    b.put_u64(42UL) // seed
+    b.put_u32(0) // entry
+    b.put_u32(0) // max_level
+    b.put_u32(1) // count
+    b.put_u64(42UL) // rng state
+    if version >= 2 {
+      b.put_byte(b'\x01') // alive
+    }
+    if version >= 3 {
+      b.put_u64(99UL) // label
+    }
+    b.put_f32(1.0)
+    b.put_f32(2.0)
+    b.put_u32(1) // one layer
+    b.put_u32(0) // no links
+    if version >= 4 {
+      b.put_u32(crc32_of(b.buf, b.len).reinterpret_as_int())
+    }
+    let idx = Hnsw::load(b.to_fixed())
+    assert_eq(idx.size(), 1)
+    assert_eq(idx.get_vector(0), FixedArray::from_array([1.0, 2.0]))
+    assert_eq(idx.label_of(0), if version >= 3 { 99UL } else { 0UL })
+    idx.verify()
+  }
+}
+
+///|
+test "loader checks CRC before allocations and rejects valid-CRC junk" {
+  let idx = Hnsw::new(2, L2)
+  let _ = idx.add(FixedArray::from_array([1.0, 2.0]))
+  let bytes = idx.save()
+  // Count starts at byte 35. A corrupt high byte must fail at the checksum,
+  // before a huge vector or marker allocation is attempted.
+  let huge_count : FixedArray[Byte] = FixedArray::make(bytes.length(), 0)
+  FixedArray::unsafe_blit(huge_count, 0, bytes, 0, bytes.length())
+  huge_count[38] = b'\x7f'
+  let bad_count : Result[Hnsw, HnswError] = Ok(Hnsw::load(huge_count)) catch {
+    e => Err(e)
+  }
+  match bad_count {
+    Err(CorruptData(msg)) => assert_true(msg.contains("checksum"))
+    _ => fail("corrupt count must fail checksum before allocation")
+  }
+  // A recomputed checksum cannot hide structural inconsistency.
+  let wrong_level : FixedArray[Byte] = FixedArray::make(bytes.length(), 0)
+  FixedArray::unsafe_blit(wrong_level, 0, bytes, 0, bytes.length())
+  wrong_level[31] = b'\x01' // claims the entry has a higher layer
+  let crc = crc32_of(wrong_level, wrong_level.length() - 4)
+  let tail = wrong_level.length() - 4
+  wrong_level[tail] = crc.to_byte()
+  wrong_level[tail + 1] = (crc >> 8).to_byte()
+  wrong_level[tail + 2] = (crc >> 16).to_byte()
+  wrong_level[tail + 3] = (crc >> 24).to_byte()
+  let bad_graph : Result[Hnsw, HnswError] = Ok(Hnsw::load(wrong_level)) catch {
+    e => Err(e)
+  }
+  assert_true(bad_graph is Err(CorruptData(_)))
+  // Extra bytes are rejected even if the appended payload has a valid CRC.
+  let padded : FixedArray[Byte] = FixedArray::make(bytes.length() + 1, 0)
+  FixedArray::unsafe_blit(padded, 0, bytes, 0, bytes.length() - 4)
+  let padded_crc = crc32_of(padded, padded.length() - 4)
+  let padded_tail = padded.length() - 4
+  padded[padded_tail] = padded_crc.to_byte()
+  padded[padded_tail + 1] = (padded_crc >> 8).to_byte()
+  padded[padded_tail + 2] = (padded_crc >> 16).to_byte()
+  padded[padded_tail + 3] = (padded_crc >> 24).to_byte()
+  let extra : Result[Hnsw, HnswError] = Ok(Hnsw::load(padded)) catch {
+    e => Err(e)
+  }
+  assert_true(extra is Err(CorruptData(_)))
 }

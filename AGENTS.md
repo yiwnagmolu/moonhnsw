@@ -21,9 +21,9 @@ pure MoonBit HNSW approximate nearest-neighbor search library (module
   - `rng.mbt` — the SplitMix64 level-draw generator.
   - `heap.mbt` — the internal binary heap.
 - `hnsw_wbtest.mbt` holds whitebox tests (internal helpers, brute-force
-  recall harness, tamper and stress tests); `api_test.mbt` holds blackbox
-  tests that exercise the package the way an external user would, with
-  package-qualified names.
+  recall harness, tamper and stress tests); `api_test.mbt` and `audit_test.mbt`
+  hold blackbox tests that exercise the package the way an external user would,
+  with package-qualified names.
 - `examples/benchmark` runs in CI as a smoke test; `examples/benchmark-large`
   (100k vectors) is for occasional manual runs only — never add it to CI.
 

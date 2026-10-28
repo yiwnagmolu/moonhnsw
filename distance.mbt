@@ -10,6 +10,13 @@ pub fn distance(
   if a.length() != b.length() {
     raise DimMismatch(a.length(), b.length())
   }
+  if metric is Cosine {
+    let norm_a : FixedArray[Float] = FixedArray::make(a.length(), 0.0)
+    let norm_b : FixedArray[Float] = FixedArray::make(b.length(), 0.0)
+    let _ = copy_normalized(a, 0, norm_a, 0, a.length(), true)
+    let _ = copy_normalized(b, 0, norm_b, 0, b.length(), true)
+    return distance_between(Cosine, norm_a, 0, norm_b, 0, a.length())
+  }
   distance_between(metric, a, 0, b, 0, a.length())
 }
 

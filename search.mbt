@@ -238,11 +238,11 @@ pub fn Hnsw::search(
   if query.length() != self.dim {
     raise DimMismatch(self.dim, query.length())
   }
+  self.dist_calls = 0L
   if self.count == 0 || self.alive_count == 0 || k <= 0 {
     return []
   }
   self.q_scratch_source = self.q_scratch_reset
-  self.dist_calls = 0L
   // L2/IP search the caller's array directly; only Cosine needs a
   // normalized copy.
   let q : FixedArray[Float] = if self.normalize {
@@ -270,7 +270,7 @@ pub fn Hnsw::search(
 ///
 /// Traversal walks the graph as usual; only the result set is filtered, so
 /// with a highly selective filter the call may return fewer than `k` results
-/// even when more matches exist 闁?raise `ef` to compensate. Filter closures
+/// even when more matches exist. Filter closures
 /// receive the internal id; combine with `label_of(id)` for label-based
 /// filtering. Deleted vectors never pass, regardless of the filter.
 pub fn Hnsw::search_filtered(
@@ -283,11 +283,11 @@ pub fn Hnsw::search_filtered(
   if query.length() != self.dim {
     raise DimMismatch(self.dim, query.length())
   }
+  self.dist_calls = 0L
   if self.count == 0 || self.alive_count == 0 || k <= 0 {
     return []
   }
   self.q_scratch_source = self.q_scratch_reset
-  self.dist_calls = 0L
   // L2/IP search the caller's array directly; only Cosine needs a
   // normalized copy.
   let q : FixedArray[Float] = if self.normalize {
@@ -321,9 +321,12 @@ pub fn Hnsw::search_batch(
   ef~ : Int32 = 64,
 ) -> Array[Array[Neighbor]] raise HnswError {
   let out : Array[Array[Neighbor]] = []
+  let mut total_calls = 0L
   for q in queries {
     out.push(self.search(q, k, ef~))
+    total_calls += self.dist_calls
   }
+  self.dist_calls = total_calls
   out
 }
 
@@ -333,8 +336,8 @@ pub fn Hnsw::search_batch(
 /// relevance to the query against redundancy with the already-selected set.
 ///
 /// `lambda` blends the two objectives: 1.0 keeps only the most relevant
-/// candidates (identical to `search`), 0.0 orders purely by relevance too on
-/// the first pick and by anti-redundancy afterwards; 0.3-0.7 is the usual
+/// candidates (identical to `search`), 0.0 picks the nearest result first
+/// and then prioritizes dissimilarity to the chosen results; 0.3-0.7 is the usual
 /// working range for de-duplicated RAG contexts. `filter` restricts the
 /// candidate pool. Similarity is the negated index distance, so every metric
 /// works unchanged.
@@ -346,13 +349,17 @@ pub fn Hnsw::search_mmr(
   ef~ : Int32 = 128,
   filter~ : (Int32) -> Bool = fn(_) { true },
 ) -> Array[Neighbor] raise HnswError {
-  if lambda < 0.0 || lambda > 1.0 {
+  if !(lambda >= 0.0 && lambda <= 1.0) {
     raise InvalidParams("lambda must be within [0, 1]")
+  }
+  if lambda == 1.0 {
+    return self.search_filtered(query, k, ef~, filter~)
   }
   // The pool must be wider than k, or near-duplicate candidates crowd out
   // any diversity the greedy pass could achieve.
-  let pool = self.search_filtered(query, ef, ef~, filter~)
-  if lambda <= 0.0 || pool.length() <= 1 {
+  let pool_size = if ef < k { k } else { ef }
+  let pool = self.search_filtered(query, pool_size, ef~, filter~)
+  if pool.length() <= 1 {
     let out : Array[Neighbor] = []
     for r in pool {
       if out.length() >= k {
@@ -381,8 +388,12 @@ pub fn Hnsw::search_mmr(
             max_sim = sim
           }
         }
-        let penalty = if out.length() == 0 { 0.0 } else { lambda * max_sim }
-        let score = (1.0 - lambda) * relevance - penalty
+        let penalty = if out.length() == 0 {
+          0.0
+        } else {
+          (1.0 - lambda) * max_sim
+        }
+        let score = lambda * relevance - penalty
         if best < 0 || score > best_score {
           best = i
           best_score = score
@@ -418,17 +429,17 @@ pub fn Hnsw::search_radius(
   if query.length() != self.dim {
     raise DimMismatch(self.dim, query.length())
   }
+  if radius != radius || (self.distance is L2 && radius < 0.0) {
+    raise InvalidParams("radius must be a valid distance for this metric")
+  }
+  self.dist_calls = 0L
   if max_results <= 0 {
     return []
   }
   if self.count == 0 || self.alive_count == 0 {
     return []
   }
-  if radius < 0.0 {
-    raise InvalidParams("radius must be >= 0")
-  }
   self.q_scratch_source = self.q_scratch_reset
-  self.dist_calls = 0L
   // L2/IP search the caller's array directly; only Cosine needs a
   // normalized copy.
   let q : FixedArray[Float] = if self.normalize {
