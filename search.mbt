@@ -177,11 +177,9 @@ fn Hnsw::search_layer(
       }
     }
   }
-  // The candidate heap is never drained by the caller; empty it in place so
-  // the reused backing store starts clean next time.
-  while candidates.size() > 0 {
-    let _ = candidates.pop()
-  }
+  // The remaining candidates are never read. Clear the reused backing store
+  // directly instead of heap-popping every element.
+  candidates.items.clear()
   results.to_sorted_ascending()
 }
 

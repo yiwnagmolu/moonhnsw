@@ -4,6 +4,18 @@ All notable changes to moonhnsw are documented here. Releases are tagged in
 the repository; the binary serialization format stays backward compatible
 (newer loaders accept older payloads).
 
+## 0.10.2 — 2026-10-28
+
+### Changed
+
+- Clear the reusable candidate heap directly after graph traversal instead of
+  popping every unused candidate. This reduces the cleanup work from
+  O(r log r) to O(r) for r remaining candidates, with no change to search
+  results, distance computations, or the serialized format.
+- The bundled wasm-gc benchmark retained the same recall and distance counts
+  across all metrics and search widths; its short throughput runs varied too
+  much to claim a reliable end-to-end speedup.
+
 ## 0.10.1 — 2026-10-26
 
 ### Added
