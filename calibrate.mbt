@@ -127,7 +127,8 @@ pub fn Hnsw::calibrate_ef(
       }
     }
     total_trial_calls += calls
-    let recall = hits.to_double() / (queries.length() * truth_k).to_double()
+    let recall = hits.to_double() /
+      (queries.length().to_double() * truth_k.to_double())
     trials.push({
       ef,
       recall,
