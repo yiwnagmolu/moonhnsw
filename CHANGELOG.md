@@ -4,6 +4,42 @@ All notable changes to moonhnsw are documented here. Releases are tagged in
 the repository; the binary serialization format stays backward compatible
 (newer loaders accept older payloads).
 
+## 0.11.0 — 2026-10-28
+
+### Added
+
+- `calibrate_ef`: compare representative queries against an exact scan of
+  live stored vectors, report recall@k and mean distance computations for
+  each candidate `ef`, and recommend the smallest tested width meeting the
+  caller's target. Frozen SQ8 uses its search distance for ground truth.
+- `search_filtered_adaptive`: widen a post-filter HNSW candidate pool until
+  `k` matches are found or `ef_max` is reached; return the final width,
+  round count, neighbors, and total distance work.
+- Public tests for both APIs, plus v1–v4 payload fixtures and corruption
+  regression cases. The serialized format remains v5.
+
+### Fixed
+
+- Restore standard MMR `lambda` semantics: 1.0 is pure relevance, while 0.0
+  selects the nearest first and then favors diversity. Pools now grow to at
+  least `k` even when `ef < k`.
+- Normalize inputs to the public `distance(Cosine, a, b)` helper; allow
+  negative radius thresholds for Cosine and InnerProduct.
+- Reject wrong-dimension upserts before deleting old labeled vectors. Batch
+  searches now report the sum of their distance computations.
+- Check v4/v5 CRC before allocating from untrusted header lengths; reject
+  trailing data and invalid graph structure during load. The constructor and
+  loader now cap dimensions at 1,000,000 and `m` at 1,073,741,823 to avoid
+  invalid allocation and link-budget arithmetic.
+
+### Ecosystem check
+
+- On 2026-10-28, the Mooncakes registry listed 3,371 unique modules.
+  `trkbt10/vcdb` already provides HNSW, so HNSW itself is not a unique
+  Mooncakes capability. The inspected vector-search packages did not expose
+  equivalent adaptive filtered HNSW widening or empirical HNSW `ef`
+  calibration APIs. `yiwnagmolu/moonhnsw` was not yet listed in the registry.
+
 ## 0.10.2 — 2026-10-28
 
 ### Changed

@@ -21,7 +21,8 @@ pub extend Distance with Eq::{not_equal, equal}
 /// defaults; values outside the supported range are clamped by `Hnsw::new`.
 pub struct HnswParams {
   /// Maximum number of links kept per node on layers above 0. Larger values
-  /// give higher recall at the cost of memory and build time. Clamped to >= 2.
+  /// give higher recall at the cost of memory and build time. Clamped to >= 2;
+  /// values above 1,073,741,823 are rejected to keep the layer-0 budget safe.
   m : Int32
   /// Size of the candidate list kept while inserting a node. Larger values
   /// build a higher-quality graph at a higher build cost. Clamped to >= 1.
@@ -186,7 +187,7 @@ pub struct Hnsw {
 }
 
 ///|
-/// Creates an empty index over vectors of dimension `dim`.
+/// Creates an empty index over vectors of dimension `dim` (1..=1,000,000).
 pub fn Hnsw::new(
   dim : Int32,
   distance : Distance,
