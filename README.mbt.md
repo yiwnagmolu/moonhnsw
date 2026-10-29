@@ -1,7 +1,7 @@
 # moonhnsw
 
 [![CI](https://github.com/yiwnagmolu/moonhnsw/actions/workflows/ci.yml/badge.svg)](https://github.com/yiwnagmolu/moonhnsw/actions/workflows/ci.yml)
-[![Version](https://img.shields.io/badge/version-0.11.2-blue)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.12.0-blue)](CHANGELOG.md)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
 Pure MoonBit approximate nearest-neighbor search: a local vector index built on the HNSW graph (Malkov & Yashunin, 2016) — the same algorithm inside [hnswlib](https://github.com/nmslib/hnswlib), [usearch](https://github.com/unum-cloud/usearch) and Qdrant.
@@ -19,12 +19,14 @@ Feed in `f32` vectors, get back the approximate top-k nearest neighbors. No FFI,
 - **MMR diverse search**: `search_mmr(query, k, lambda)` re-ranks a wide candidate pool for relevance-vs-redundancy, the de-duplication step RAG contexts need.
 - **Empirical ef calibration**: `calibrate_ef` measures recall@k against an exact scan of representative queries and recommends the smallest tested beam width meeting your target.
 - **Adaptive filtered retrieval**: `search_filtered_adaptive` widens an unfiltered candidate pool until it contains `k` filter matches or reaches a configured cap; it reports rounds and distance work.
+- **Guaranteed exact retrieval**: `search_exact` and `search_radius_exact` scan the live stored vectors with stable distance/id ties. Use them for small collections, strict completeness, and a trustworthy recall baseline; SQ8 results are exact over its quantized store.
 - **Integrity-checked persistence**: payloads carry a CRC-32 trailer, so flipped bits and silent truncation are rejected on load instead of surfacing as degraded searches.
 - **Three metrics** with a smaller-is-closer convention: `L2` (squared Euclidean), `InnerProduct` (negated dot product), `Cosine` (vectors normalized once on insertion).
 - **Tunable** `m`, `ef_construction`, and per-query `ef` — the standard recall/speed trade-off knobs.
 - **Zero-copy friendly storage**: vectors live in one flattened `FixedArray[Float]`; traversal marks visited nodes with generation stamps instead of hash sets; distances accumulate in f32 like hnswlib.
 - **Self-contained serialization**: one `save()` call produces a byte buffer you can write anywhere; `load()` restores an index that answers searches identically and keeps accepting insertions.
 - **Typed errors** (`HnswError`) with readable messages.
+- **Finite-input checks**: NaN and infinite vectors/queries are rejected before graph mutation; loading also validates stored values after checksum verification.
 
 ## Quick start
 
@@ -72,11 +74,13 @@ moon add yiwnagmolu/moonhnsw
 | `Hnsw::find_by_label(label) -> Array[Int]` | Ids carrying a label (labels may repeat). |
 | `Hnsw::search_batch(queries, k, ef~)` | One call for a list of queries. |
 | `Hnsw::search(query, k, ef~ = 64) -> Array[Neighbor]` | Approximate top-k, sorted by distance ascending. |
+| `Hnsw::search_exact(query, k, filter~) -> Array[Neighbor]` | Exhaustive top-k over live stored vectors, distance/id tie order. |
 | `Hnsw::search_filtered(query, k, ef~, filter)` | Top-k restricted by a filter closure over ids (metadata filtering). |
 | `Hnsw::search_filtered_adaptive(query, k, ef_start~, ef_max~, filter)` | Grow a post-filter candidate pool until k matches or the cap; returns neighbors, final ef, rounds, and distance work. |
 | `Hnsw::calibrate_ef(queries, k, target_recall, efs)` | Measure recall and mean distance work at each ef; select the smallest ef meeting the target. |
 | `Hnsw::search_mmr(query, k, lambda~, ef~)` | Maximal Marginal Relevance; lambda=1 keeps relevance, lambda=0 prioritizes diversity after the first result. |
 | `Hnsw::search_radius(query, radius, max_results~, filter~)` | Radius search; composes with the filter closure. |
+| `Hnsw::search_radius_exact(query, radius, max_results~, filter~)` | Exhaustive radius search with a completeness guarantee within the result limit. |
 | `Hnsw::shrink_to_fit()` | Release store slack without rebuilding the graph. |
 | `Hnsw::from_vectors(dim, distance, vectors, params~)` | One-call construction from a list of vectors. |
 | `Hnsw::delete(id)` | Tombstone-delete a vector; it disappears from every search. |
@@ -148,6 +152,12 @@ neighbors at the cap, and its results are approximate. The result records
 `search_filtered` applies the filter during traversal and can explore more
 of the graph for selective filters.
 
+When a missing neighbor is unacceptable, use `search_exact` or
+`search_radius_exact`. Both scan every live vector that passes the filter;
+their cost grows linearly with collection size. `search_radius` and the
+adaptive family remain approximate. For SQ8, exact means exact relative to
+the quantized values stored by the index.
+
 ## Parameters
 
 | Parameter | Default | Guidance |
@@ -158,6 +168,16 @@ of the graph for selective filters.
 | `storage` | `Float32` | `SQ8` stores one byte per dimension after learning bounds from the first 256 vectors (~4x less memory, slightly lower recall, out-of-range values clamp). |
 
 ## Benchmarks
+
+The reproducible [real-data benchmark](docs/real-benchmarks.md) uses held-out
+queries from two UCI datasets and the JS release backend. On this Windows
+Ryzen 7 5800H run, L2 Float32 at `ef=64` reached 8,312 QPS on 7,494 pen-digit
+vectors (exact scan: 929 QPS) and 5,256 QPS on 16,000 letter vectors (exact
+scan: 362 QPS). Tie-aware recall@10 was 1.000 on both; the letter dataset has
+many equal-distance vectors, so strict ID overlap was 0.9445. SQ8 used about
+25% less serialized space on both datasets, with lower recall. These are
+median-of-three short query runs, not a general throughput guarantee. The
+report includes all ef widths, metrics, source hashes and raw logs.
 
 Measured with the bundled `examples/benchmark` on uniform random data (dim=32, m=16, ef_construction=200, k=10), executed on the **wasm-gc** backend via `moonrun` on Windows. The 2k and 10k rows were rerun for v0.11.0 on 2026-10-28 (100 queries at 2k, 50 at 10k); the 100k row is an earlier v0.10.0 manual run. Wall-clock numbers vary by run and machine. Speedups use a fair single-pass brute-force top-k in the same process; `dists/query` counts distance computations.
 
@@ -200,7 +220,7 @@ moon run --target wasm-gc examples/benchmark-large
 
 **Good fit** — embedded, single-writer semantic search and RAG contexts at 10k–500k vectors on wasm or native; dedup and clustering via `search_radius`; disk-backed indexes loaded via `load` (CRC-checked); memory-constrained deployments via SQ8 (4x smaller store at ~0.99 recall).
 
-**Know the boundaries** — indexes are single-threaded and not concurrency-safe (wrap in your own actor/lock); below ~10k vectors a plain brute-force scan is faster (the `distance` helper is all you need); deletion is tombstone-based, so `compact` (a full rebuild) is the way to reclaim space; benchmarks here are wasm-gc on one machine — profile on your target backend before committing to SLAs. No incremental persistence: `save` writes the full index.
+**Know the boundaries** — indexes are single-threaded and not concurrency-safe (wrap in your own actor/lock); exact scanning can beat HNSW on small collections but the crossover depends on data and backend (the JS UCI runs above favored HNSW even at 7,494 vectors); deletion is tombstone-based, so `compact` (a full rebuild) is the way to reclaim space; benchmarks cover one Windows machine on JS and wasm-gc — profile on your target backend before committing to SLAs. No incremental persistence: `save` writes the full index.
 
 ## Implementation notes
 

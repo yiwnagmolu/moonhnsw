@@ -4,6 +4,32 @@ All notable changes to moonhnsw are documented here. Releases are tagged in
 the repository; the binary serialization format stays backward compatible
 (newer loaders accept older payloads).
 
+## 0.12.0 — 2026-10-29
+
+### Added
+
+- `search_exact` and `search_radius_exact` scan live stored vectors for
+  guaranteed top-k and radius results, with filters and stable distance/id
+  tie ordering. SQ8 scans use the index's quantized distance semantics.
+- A reproducible JS release benchmark on two UCI datasets (pen digits and
+  letter features), including 200 held-out queries, Float32 and SQ8 results,
+  exact-scan baselines, tie-aware recall, distance counts, source hashes,
+  raw output and hardware details.
+- Boundary tests for exact scans, ties, tombstones, selective filters, SQ8,
+  empty indexes, invalid inputs and valid-checksum corrupt payloads.
+
+### Changed
+
+- Reject NaN and infinite input vectors and queries before they can corrupt
+  graph ordering or SQ8 bounds. `upsert_labeled` validates before deleting
+  previous vectors, and loading rejects non-finite stored f32 values and SQ8
+  metadata even when the payload checksum is valid.
+- `calibrate_ef` now uses the public exact scan for its ground truth. Binary
+  serialization format v5 remains unchanged and old payload versions load.
+- Mooncakes registry review found an existing brute-force strategy in
+  `trkbt10/vcdb`; this API differs by exact-scanning the same HNSW instance,
+  preserving its tombstones, filters and SQ8 stored-distance semantics.
+
 ## 0.11.2 — 2026-10-29
 
 ### Changed
