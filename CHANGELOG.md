@@ -4,6 +4,21 @@ All notable changes to moonhnsw are documented here. Releases are tagged in
 the repository; the binary serialization format stays backward compatible
 (newer loaders accept older payloads).
 
+## 0.11.1 — 2026-10-29
+
+### Changed
+
+- Cache each MMR candidate's maximum similarity to selected results, reducing
+  reranking pair distances from O(pool × k²) to O(pool × k). With a 128-item
+  pool and k=10, pair distances drop from 5,475 to 1,107; the bundled 2k L2
+  run measured 6,862.94 to 2,494.94 total distances per query, with the same
+  ordered-result checksum.
+- Reverse the drained result heap in place, avoiding one array allocation and
+  copy per graph search. Bundled search recall and distance counts stayed the
+  same across L2, InnerProduct, Cosine, and SQ8.
+- Report MMR throughput, total distance work, and an ordered-result checksum
+  in the benchmark example. The binary format and public API are unchanged.
+
 ## 0.11.0 — 2026-10-28
 
 ### Added

@@ -1,7 +1,7 @@
 # moonhnsw
 
 [![CI](https://github.com/yiwnagmolu/moonhnsw/actions/workflows/ci.yml/badge.svg)](https://github.com/yiwnagmolu/moonhnsw/actions/workflows/ci.yml)
-[![Version](https://img.shields.io/badge/version-0.11.0-blue)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.11.1-blue)](CHANGELOG.md)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
 Pure MoonBit approximate nearest-neighbor search: a local vector index built on the HNSW graph (Malkov & Yashunin, 2016) — the same algorithm inside [hnswlib](https://github.com/nmslib/hnswlib), [usearch](https://github.com/unum-cloud/usearch) and Qdrant.
@@ -171,6 +171,13 @@ Measured with the bundled `examples/benchmark` on uniform random data (dim=32, m
 | L2 SQ8 | 2 000 | 713 ms | recall 0.99, 6297 q/s (0.56x brute) | recall 0.99, 4101 q/s (0.36x) | recall 0.99, 2711 q/s (0.24x) |
 
 **Read the speedup column honestly:** on these runs, a tight brute-force loop wins at 2k vectors and ef=64 crosses over around 10k. In the earlier 100k run, the graph touched **1.7% of the dataset** per query (1687 vs 100000 distances) for 0.83 recall and measured 13.9x brute-force throughput. That older wall-clock result should be remeasured before comparing it with v0.11.0.
+
+The benchmark now also reports MMR query throughput, total distance work,
+and an ordered-result checksum. In a v0.11.1 L2 run with 2,000 vectors,
+`k=10`, and `ef=128`, MMR distance work fell from 6,862.94 to 2,494.94
+per query. Its ordered-result checksum stayed the same across L2, inner
+product, cosine, 10k L2, and SQ8 runs. These are short, fixed-seed wasm-gc
+measurements; rerun them on your target before relying on wall-clock figures.
 
 At 10k vectors the ef trade-off becomes visible: `ef=64` reaches 0.97 recall, `ef=128` reaches 1.00. At 100k the graph was 4 layers tall (~30 MB estimated); that random dataset needed `ef=256` for exact recall. SQ8 shrinks the estimated index from 0.53 MB to 0.34 MB at 2k vectors (the vector store itself drops 4x) at 0.99 recall, and built about 24% slower in this run.
 
