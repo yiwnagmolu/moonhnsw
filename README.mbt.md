@@ -55,8 +55,7 @@ let bytes : FixedArray[Byte] = index.save()
 let restored = @moonhnsw.Hnsw::load(bytes)
 ```
 
-The source is currently available on GitHub; Mooncakes publication is pending.
-After publication, add the dependency to your `moon.mod` with:
+Available on [Mooncakes](https://mooncakes.io/docs/yiwnagmolu/moonhnsw/) as `yiwnagmolu/moonhnsw`. Add the dependency with:
 
 ```
 moon add yiwnagmolu/moonhnsw
