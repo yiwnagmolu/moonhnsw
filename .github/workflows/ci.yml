@@ -19,6 +19,9 @@ jobs:
       - name: Check formatting
         run: moon fmt --check
 
+      - name: Check benchmark launcher syntax
+        run: node --check benchmarks/real/run.cjs
+
       - name: Test (wasm-gc)
         run: moon test --target wasm-gc
 

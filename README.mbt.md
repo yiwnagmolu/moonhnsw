@@ -1,7 +1,7 @@
 # moonhnsw
 
 [![CI](https://github.com/yiwnagmolu/moonhnsw/actions/workflows/ci.yml/badge.svg)](https://github.com/yiwnagmolu/moonhnsw/actions/workflows/ci.yml)
-[![Version](https://img.shields.io/badge/version-0.12.1-blue)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.12.2-blue)](CHANGELOG.md)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
 Pure MoonBit approximate nearest-neighbor search: a local vector index built on the HNSW graph (Malkov & Yashunin, 2016) — the same algorithm inside [hnswlib](https://github.com/nmslib/hnswlib), [usearch](https://github.com/unum-cloud/usearch) and Qdrant.
@@ -15,7 +15,7 @@ Feed in `f32` vectors, get back the approximate top-k nearest neighbors. No FFI,
 - **Introspection**: `stats()` reports per-layer node counts, average degree and a rough memory estimate; `get_vector(id)` and `contains(id)` expose the stored data; `export_dot(layer)` renders any layer as Graphviz DOT; `Neighbor` and `HnswStats` derive `Eq` / `Debug` / `ToJson`, so results drop straight into assertions, logs and JSON pipelines.
 - **External labels**: `add_labeled(vector, label)` tags each vector with a `UInt64` key (a document or chunk id); labels persist through `save` / `load` and `compact`.
 - **Composable**: `absorb()` merges another index (keeping labels), `copy()` deep-clones, and `save_bytes()` / `load_bytes()` wrap the payload as `Bytes` for binary pipelines.
-- **SQ8 scalar quantization**: `storage=SQ8` learns per-dimension bounds from the first 256 vectors and then stores one byte per dimension — ~4x smaller vector store at 0.99 recall on the bundled benchmark; values outside the learned range clamp.
+- **SQ8 scalar quantization**: `storage=SQ8` learns per-dimension bounds from the first 256 vectors and then stores one byte per dimension. The vector store is about 4x smaller; retrieval quality depends on the data and values outside the learned range clamp.
 - **MMR diverse search**: `search_mmr(query, k, lambda)` re-ranks a wide candidate pool for relevance-vs-redundancy, the de-duplication step RAG contexts need.
 - **Empirical ef calibration**: `calibrate_ef` measures recall@k against an exact scan of representative queries and recommends the smallest tested beam width meeting your target.
 - **Adaptive filtered retrieval**: `search_filtered_adaptive` widens an unfiltered candidate pool until it contains `k` filter matches or reaches a configured cap; it reports rounds and distance work.
@@ -23,43 +23,41 @@ Feed in `f32` vectors, get back the approximate top-k nearest neighbors. No FFI,
 - **Integrity-checked persistence**: payloads carry a CRC-32 trailer, so flipped bits and silent truncation are rejected on load instead of surfacing as degraded searches.
 - **Three metrics** with a smaller-is-closer convention: `L2` (squared Euclidean), `InnerProduct` (negated dot product), `Cosine` (vectors normalized once on insertion).
 - **Tunable** `m`, `ef_construction`, and per-query `ef` — the standard recall/speed trade-off knobs.
-- **Zero-copy friendly storage**: vectors live in one flattened `FixedArray[Float]`; traversal marks visited nodes with generation stamps instead of hash sets; distances accumulate in f32 like hnswlib.
+- **Allocation-aware storage**: vectors live in one flattened `FixedArray[Float]`; traversal marks visited nodes with generation stamps instead of hash sets; distances accumulate in f32 like hnswlib.
 - **Self-contained serialization**: one `save()` call produces a byte buffer you can write anywhere; `load()` restores an index that answers searches identically and keeps accepting insertions.
 - **Typed errors** (`HnswError`) with readable messages.
 - **Finite-input checks**: NaN and infinite vectors/queries are rejected before graph mutation; loading also validates stored values after checksum verification.
 
 ## Quick start
 
-```mbt nocheck
-let index = @moonhnsw.Hnsw::new(8, @moonhnsw.Distance::Cosine)
+The module is available on [Mooncakes](https://mooncakes.io/docs/yiwnagmolu/moonhnsw/). From your project root, add it to `moon.mod`:
 
-// Insert vectors (they are copied into the index); ids are 0, 1, 2, ...
-let v : FixedArray[Float] = FixedArray::from_array([
-  0.1, 0.2, 0.0, 0.4, 0.1, 0.0, 0.9, 0.3,
-])
-let id = index.add(v)
-let query = v
-
-// Approximate top-10; larger `ef` = higher recall, slower query.
-let hits : Array[@moonhnsw.Neighbor] = index.search(query, 10, ef=64)
-for hit in hits {
-  println("id=\{hit.id} distance=\{hit.distance}")
-}
-
-// Tag with a business key and search within a metadata subset.
-let labeled_id = index.add_labeled(v, 42UL)
-let subset = index.search_filtered(query, 5, filter=fn(id) { id % 2 == 0 })
-
-// Persist and restore.
-let bytes : FixedArray[Byte] = index.save()
-let restored = @moonhnsw.Hnsw::load(bytes)
-```
-
-Available on [Mooncakes](https://mooncakes.io/docs/yiwnagmolu/moonhnsw/) as `yiwnagmolu/moonhnsw`. Add the dependency with:
-
-```
+```sh
 moon add yiwnagmolu/moonhnsw
 ```
+
+In the `moon.pkg` of the package using the library (for example, `cmd/main/moon.pkg`), add:
+
+```moon.pkg
+import {
+  "yiwnagmolu/moonhnsw" @moonhnsw,
+}
+```
+
+Then put this complete example in `cmd/main/main.mbt` and run `moon run cmd/main` (or add `--target wasm-gc` / `--target js`):
+
+```mbt nocheck
+///|
+fn main raise {
+  let index = @moonhnsw.Hnsw::new(2, @moonhnsw.Distance::L2)
+  let vector : FixedArray[Float] = FixedArray::from_array([1.0, 2.0])
+  let _ = index.add(vector)
+  let hits = index.search(vector, 1, ef=64)
+  println("nearest id=\{hits[0].id} distance=\{hits[0].distance}")
+}
+```
+
+This install path was checked in a fresh project against the published Mooncakes package. For larger examples of labels, filtered search and persistence, see the API table below and the repository tests.
 
 ## API
 
@@ -164,19 +162,24 @@ the quantized values stored by the index.
 | `m` | 16 | Links per node on upper layers (layer 0 keeps `2m`). 12–48 is the usual range; higher = better recall, more memory. |
 | `ef_construction` | 200 | Beam width while inserting. 100–500; higher builds a better graph. |
 | `ef` (per search) | 64 | Beam width at query time. `ef >= k` is enforced; 64–512 covers most workloads. |
-| `storage` | `Float32` | `SQ8` stores one byte per dimension after learning bounds from the first 256 vectors (~4x less memory, slightly lower recall, out-of-range values clamp). |
+| `storage` | `Float32` | `SQ8` stores one byte per dimension after learning bounds from the first 256 vectors (~4x smaller vector store, data-dependent recall, out-of-range values clamp). |
 
 ## Benchmarks
 
 The reproducible [real-data benchmark](docs/real-benchmarks.md) uses held-out
-queries from two UCI datasets and the JS release backend. On this Windows
-Ryzen 7 5800H run, L2 Float32 at `ef=64` reached 8,312 QPS on 7,494 pen-digit
-vectors (exact scan: 929 QPS) and 5,256 QPS on 16,000 letter vectors (exact
-scan: 362 QPS). Tie-aware recall@10 was 1.000 on both; the letter dataset has
+queries from three UCI datasets and the JS release backend, covering L2,
+InnerProduct and Cosine. On this Windows Ryzen 7 5800H run of v0.12.2, L2
+Float32 at `ef=64` reached 7,786 QPS on 7,494 pen-digit vectors (exact scan:
+819 QPS) and 4,665 QPS on 16,000 letter vectors (exact scan: 391 QPS).
+Tie-aware recall@10 was 1.000 on both; the letter dataset has
 many equal-distance vectors, so strict ID overlap was 0.9445. SQ8 used about
-25% less serialized space on both datasets, with lower recall. These are
-median-of-three short query runs, not a general throughput guarantee. The
-report includes all ef widths, metrics, source hashes and raw logs.
+25% less serialized space on those two datasets, with lower recall. These are
+median-of-three short query runs, not a general throughput guarantee. On the
+third dataset, Wine Quality, SQ8 tie-aware recall was only 0.9285 at `ef=64`;
+quantization should be validated for each workload. The report includes all
+ef widths, metrics, source hashes and raw logs.
+The [acceptance self-audit](docs/acceptance-audit.md) maps the original project
+proposal to code, tests, benchmark evidence and remaining measurement limits.
 
 Measured with the bundled `examples/benchmark` on uniform random data (dim=32, m=16, ef_construction=200, k=10), executed on the **wasm-gc** backend via `moonrun` on Windows. The 2k and 10k rows were rerun for v0.11.0 on 2026-10-28 (100 queries at 2k, 50 at 10k); the 100k row is an earlier v0.10.0 manual run. Wall-clock numbers vary by run and machine. Speedups use a fair single-pass brute-force top-k in the same process; `dists/query` counts distance computations.
 
@@ -217,7 +220,7 @@ moon run --target wasm-gc examples/benchmark-large
 
 ## When to use / production readiness
 
-**Good fit** — embedded, single-writer semantic search and RAG contexts at 10k–500k vectors on wasm or native; dedup and clustering via `search_radius`; disk-backed indexes loaded via `load` (CRC-checked); memory-constrained deployments via SQ8 (4x smaller store at ~0.99 recall).
+**Good fit** — embedded, single-writer semantic search and RAG contexts; dedup and clustering via `search_radius`; disk-backed indexes loaded via `load` (CRC-checked); memory-constrained deployments via SQ8 when measured recall is acceptable. The bundled measurements span 2k–100k vectors, with the largest run on an older release.
 
 **Know the boundaries** — indexes are single-threaded and not concurrency-safe (wrap in your own actor/lock); exact scanning can beat HNSW on small collections but the crossover depends on data and backend (the JS UCI runs above favored HNSW even at 7,494 vectors); deletion is tombstone-based, so `compact` (a full rebuild) is the way to reclaim space; benchmarks cover one Windows machine on JS and wasm-gc — profile on your target backend before committing to SLAs. No incremental persistence: `save` writes the full index.
 
@@ -261,6 +264,11 @@ moon run --target wasm-gc examples/benchmark
 - Malkov, Yashunin. *Efficient and robust approximate nearest neighbor search using Hierarchical Navigable Small World graphs*. TPAMI 2018 (arXiv:1603.09320).
 - [hnswlib](https://github.com/nmslib/hnswlib) and [usearch](https://github.com/unum-cloud/usearch) for parameter conventions.
 
+This is an independent MoonBit implementation of the published HNSW algorithm,
+not a port or copy of either library. The repository does not bundle their code.
+
 ## License
 
-MIT
+MIT; see [LICENSE](LICENSE). The benchmark downloads UCI datasets at runtime;
+the source data is not bundled. Dataset attribution, DOIs and CC BY 4.0 links
+are in the [real-data benchmark report](docs/real-benchmarks.md).

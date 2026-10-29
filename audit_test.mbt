@@ -104,3 +104,55 @@ test "public api: top-k retains a finite vector with infinite L2 distance" {
   assert_eq(idx.search_radius(query, 1.0e308).length(), 0)
   assert_eq(idx.search_radius(query, hits[0].distance), hits)
 }
+
+///|
+test "public api: all deleted vectors leave exact and adaptive search empty" {
+  let idx = @moonhnsw.Hnsw::new(1, @moonhnsw.Distance::L2)
+  let q : FixedArray[Float] = FixedArray::from_array([0.0])
+  let id = idx.add_labeled(q, 42UL)
+  idx.delete(id)
+  assert_eq(idx.search_exact(q, 10).length(), 0)
+  assert_eq(idx.search_radius_exact(q, 0.0).length(), 0)
+  let adaptive = idx.search_filtered_adaptive(q, 1, filter=fn(_) { true })
+  assert_eq(adaptive.rounds, 0)
+  assert_eq(adaptive.distance_computations, 0L)
+  let calibration : Result[@moonhnsw.EfCalibration, @moonhnsw.HnswError] = Ok(
+    idx.calibrate_ef([q], 1, 1.0, [1]),
+  ) catch {
+    e => Err(e)
+  }
+  assert_true(calibration is Err(@moonhnsw.HnswError::InvalidParams(_)))
+  let restored = @moonhnsw.Hnsw::load(idx.save())
+  assert_eq(restored.search_exact(q, 1).length(), 0)
+  let new_id = restored.add_labeled(q, 42UL)
+  assert_eq(restored.search_exact(q, 1)[0].id, new_id)
+}
+
+///|
+test "public api: SQ8 upsert, compact, and persistence keep labels searchable" {
+  let idx = @moonhnsw.Hnsw::new(
+    1,
+    @moonhnsw.Distance::L2,
+    params=@moonhnsw.HnswParams::new(storage=@moonhnsw.Storage::SQ8),
+  )
+  for i in 0..<256 {
+    let _ = idx.add(FixedArray::from_array([Float::from_double(i.to_double())]))
+  }
+  let q : FixedArray[Float] = FixedArray::from_array([18.0])
+  let old_id = idx.add_labeled(FixedArray::from_array([17.0]), 500UL)
+  let new_id = idx.upsert_labeled(q, 500UL)
+  assert_eq(idx.find_by_label(500UL), [new_id])
+  assert_true(!idx.contains(old_id))
+  let compacted = idx.compact()
+  assert_eq(compacted.mapping[old_id], -1)
+  let mapped_id = compacted.mapping[new_id]
+  let loaded = @moonhnsw.Hnsw::load(compacted.index.save())
+  assert_eq(loaded.find_by_label(500UL), [mapped_id])
+  let hits = loaded.search_exact(q, 10, filter=fn(id) { id == mapped_id })
+  assert_eq(hits.length(), 1)
+  assert_eq(hits[0].id, mapped_id)
+  assert_eq(
+    loaded.search_radius_exact(q, 1.0, filter=fn(id) { id == mapped_id }),
+    hits,
+  )
+}

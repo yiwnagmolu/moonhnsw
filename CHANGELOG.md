@@ -4,6 +4,28 @@ All notable changes to moonhnsw are documented here. Releases are tagged in
 the repository; the binary serialization format stays backward compatible
 (newer loaders accept older payloads).
 
+## 0.12.2 — 2026-10-30
+
+### Added
+
+- Third reproducible real-data benchmark on UCI Wine Quality (white): 4,000
+  indexed vectors, 200 held-out queries, source SHA-256, raw log and method.
+- Current-version runs of Pen Digits and Letter Recognition now include
+  InnerProduct, completing all three distance metrics on all three UCI sets.
+- Cross-feature boundary tests for fully deleted indexes and SQ8 labeled
+  upsert followed by compact, persistence and exact filtered retrieval.
+- Proposal-to-evidence acceptance audit and a fresh Mooncakes consumer smoke
+  check of the installation instructions.
+
+### Changed
+
+- Make the README quick start a runnable example with the required `moon.pkg`
+  import. Qualify SQ8 recall and scale claims using the new real-data result.
+- Reject missing CSV feature cells in the benchmark runner and fail the
+  process if its MoonBit benchmark encounters an error.
+- Clarify MIT ownership and repair garbled source comments. No library API or
+  serialization format changes.
+
 ## 0.12.1 — 2026-10-29
 
 ### Changed

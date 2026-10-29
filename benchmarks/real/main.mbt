@@ -1,4 +1,4 @@
-// Run through `node benchmarks/real/run.cjs pendigits|letters`; the launcher
+// Run through `node benchmarks/real/run.cjs pendigits|letters|winequality`; the launcher
 // downloads and checks the official UCI files, then provides their f32 values
 // to this MoonBit executable. Timed sections run in MoonBit only.
 
@@ -25,6 +25,10 @@ extern "js" fn train_value(i : Int32) -> Float =
 ///|
 extern "js" fn query_value(i : Int32) -> Float =
   #| (i) => globalThis.__moonhnsw_dataset.test[i]
+
+///|
+extern "js" fn benchmark_failed(message : String) -> Unit =
+  #| (message) => { console.error(message); process.exitCode = 1; }
 
 ///|
 fn read_rows(n : Int32, dim : Int32, train : Bool) -> Array[FixedArray[Float]] {
@@ -143,11 +147,16 @@ fn run() -> Unit raise @moonhnsw.HnswError {
   println("dataset=\{name} train=\{n} queries=\{nq} dim=\{dim} k=\{k}")
   let train = read_rows(n, dim, true)
   let queries = read_rows(nq, dim, false)
-  for metric in [@moonhnsw.Distance::L2, @moonhnsw.Distance::Cosine] {
-    let metric_name = if metric is @moonhnsw.Distance::L2 {
-      "L2"
-    } else {
-      "Cosine"
+  for
+    metric in [
+      @moonhnsw.Distance::L2,
+      @moonhnsw.Distance::InnerProduct,
+      @moonhnsw.Distance::Cosine,
+    ] {
+    let metric_name = match metric {
+      @moonhnsw.Distance::L2 => "L2"
+      @moonhnsw.Distance::InnerProduct => "InnerProduct"
+      @moonhnsw.Distance::Cosine => "Cosine"
     }
     let idx = @moonhnsw.Hnsw::new(dim, metric)
     let start = @bench.monotonic_clock_start()
@@ -191,6 +200,6 @@ fn run() -> Unit raise @moonhnsw.HnswError {
 fn main {
   match (Ok(run()) catch { e => Err(e) }) {
     Ok(_) => ()
-    Err(e) => println("benchmark error: \{e.message()}")
+    Err(e) => benchmark_failed("benchmark error: \{e.message()}")
   }
 }

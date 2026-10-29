@@ -181,7 +181,7 @@ pub struct Hnsw {
   mut stamp : Int32
   /// PRNG state used for level assignment.
   mut rng_state : UInt64
-  /// Distance computations since the last search entry point 鈥?the
+  /// Distance computations since the last search entry point: the
   /// hardware-independent efficiency metric of the graph.
   mut dist_calls : Int64
 }
@@ -248,10 +248,9 @@ pub fn Hnsw::new(
 }
 
 ///|
-/// Distance computations performed by the last search entry point 鈥?the
-/// hardware-independent efficiency metric of the graph (fewer means a
-/// better-built graph reaching the same neighbors with less work; compare
-/// across machines and with published ANN numbers directly). Composing
+/// Distance computations performed by the last search entry point: a
+/// hardware-independent work count. Compare counts under the same dataset,
+/// query set, metric, and search settings. Composing
 /// entry points like `search_mmr` or `search_batch` report the total of
 /// their inner searches plus their own re-ranking work.
 pub fn Hnsw::distance_computations(self : Hnsw) -> Int64 {

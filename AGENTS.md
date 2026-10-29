@@ -33,7 +33,7 @@ pure MoonBit HNSW approximate nearest-neighbor search library (module
   public cosine distance helper); `examples/benchmark-large`
   (100k vectors) is for occasional manual runs only — never add it to CI.
 - `benchmarks/real` is a JS-only, network-backed UCI benchmark launched by
-  `node benchmarks/real/run.cjs pendigits|letters`; its data and long runs
+  `node benchmarks/real/run.cjs pendigits|letters|winequality`; its data and long runs
   are kept out of CI. Results and source hashes live in `docs/real-benchmarks.md`.
 
 ## Commands

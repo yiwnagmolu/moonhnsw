@@ -93,7 +93,7 @@ fn Hnsw::greedy_descent(
 /// distance, ascending.
 ///
 /// Deleted (tombstone) nodes are traversed for connectivity but excluded
-/// from the results, unless `include_dead` is set 闁?index construction uses
+/// from the results, unless `include_dead` is set; index construction uses
 /// that mode so new nodes stay linked into the graph even when their
 /// surroundings are deleted.
 ///

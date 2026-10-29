@@ -13,7 +13,7 @@ pub fn Hnsw::find_by_label(self : Hnsw, label : UInt64) -> Array[Int32] {
 
 ///|
 /// Inserts `vector` tagged with `label`, first tombstone-deleting every
-/// non-deleted vector that already carries the same label 鈥?the usual
+/// non-deleted vector that already carries the same label; the usual
 /// document-update flow: re-embed the doc, then upsert.
 ///
 /// Returns the new id; the replaced ids stay reclaimable via `compact`.
