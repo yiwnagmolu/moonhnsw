@@ -16,8 +16,24 @@ jobs:
           curl -fsSL https://cli.moonbitlang.com/install/unix.sh | bash
           echo "$HOME/.moon/bin" >> "$GITHUB_PATH"
 
+      - name: Require moonc 0.10.16 or newer
+        run: |
+          python3 - <<'PY'
+          import re
+          import subprocess
+
+          version = subprocess.check_output(["moonc", "-v"], text=True).strip()
+          match = re.search(r"v(\d+)\.(\d+)\.(\d+)", version)
+          if match is None or tuple(map(int, match.groups())) < (0, 10, 16):
+              raise SystemExit(f"moonc >= 0.10.16 required; found: {version}")
+          print(version)
+          PY
+
       - name: Check formatting
         run: moon fmt --check
+
+      - name: Check MoonBit code
+        run: moon check --target wasm-gc --deny-warn
 
       - name: Check benchmark launcher syntax
         run: node --check benchmarks/real/run.cjs

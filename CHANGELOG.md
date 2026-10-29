@@ -4,6 +4,15 @@ All notable changes to moonhnsw are documented here. Releases are tagged in
 the repository; the binary serialization format stays backward compatible
 (newer loaders accept older payloads).
 
+## 0.12.3 — 2026-10-30
+
+### Changed
+
+- Enforce the contest's minimum `moonc` version (0.10.16) in CI and add an
+  explicit warning-free `moon check` step alongside build and test gates.
+- Map the nine final acceptance-guide requirements to reproducible evidence.
+  The library API and serialization format are unchanged.
+
 ## 0.12.2 — 2026-10-30
 
 ### Added

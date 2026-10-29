@@ -5,6 +5,23 @@
 官方页面列出六项验收标准；最终执行口径仍以正式章程和官方通知为准。
 数字是可复现的项目证据，不构成任意环境下的性能承诺。
 
+## 最终验收指南九项（参赛者提供）
+
+| 要求 | 可核查证据 | 自查 |
+| --- | --- | --- |
+| 1. MoonBit 为主要语言，`moonc >= 0.10.16` | 核心库、功能测试及基准计算均为 MoonBit；本机 `moonc -v` 为 `v0.10.17`，CI 有最低版本校验。 | 满足；Node 脚本仅下载数据并启动 JS 基准。 |
+| 2. GitHub 公开，提交清晰 | [公开仓库](https://github.com/yiwnagmolu/moonhnsw)、`git log --oneline --decorate`、版本标签和 `CHANGELOG.md`。 | 满足；功能、测试、基准、文档及发布记录可追溯。 |
+| 3. 结构清晰，核心功能完整 | `hnsw.mbt`、`insert.mbt`、`search.mbt`、`distance.mbt`、`serial.mbt` 等按职责拆分；下方逐项映射申报功能。 | 核心 HNSW 构建、检索与持久化可运行；近似搜索及单线程边界在 README 明示。 |
+| 4. README 目标、安装、用法和示例可复现 | `README.mbt.md` 的 Quick start 含 `moon add`、包级 `moon.pkg` 导入、完整 `main` 和运行命令；全新消费者项目从 Mooncakes 安装验证。 | 满足。 |
+| 5. CI 覆盖检查、构建、测试 | `.github/workflows/ci.yml` 执行 `moon fmt --check`、`moon check --target wasm-gc --deny-warn`、三个后端的测试、wasm 构建、文档和示例。 | 满足；以对应提交的 GitHub Actions 结果为准。 |
+| 6. 可运行示例 | `examples/benchmark` 由 CI 执行；README 另有最小消费者示例。 | 满足。 |
+| 7. 核心路径测试 | 83 项黑盒/白盒测试，覆盖三种距离、构建检索、删除压实、量化、持久化、过滤和异常输入；wasm-gc、JS 及 CI native 执行。 | 已覆盖声明的核心路径；测试无法证明零缺陷。 |
+| 8. Mooncakes 发布 | `moon view yiwnagmolu/moonhnsw --json` 可查询公开包和最新版本；README 有安装命令。 | 满足。 |
+| 9. OSI 许可证及参考来源合规 | `LICENSE` 和 `moon.mod` 均为 [OSI 认可的 MIT](https://opensource.org/license/mit)；README 列出 HNSW 论文和参数约定的参考项目，说明为独立实现；UCI 数据在基准报告中署名和注明 CC BY 4.0。 | 仓库未包含参照库代码或原始数据；历史创作过程仍须由参赛者说明。 |
+
+以上是代码和公开记录层面的验收自查；参赛者对技术选择与 AI 辅助工作的
+解释，以及最终是否通过验收，由组委会评定。
+
 ## 赛程验收标准
 
 | 官方标准 | 仓库证据与自查 |
@@ -35,7 +52,7 @@
 
 ## 提交、许可证与来源
 
-- 至 v0.12.1 有 78 个提交，发布历史按功能、基准、文档与版本提交分开；可用 `git log --oneline --decorate` 和 `git tag --list` 核对。v0.12.0 的功能与真实基准提交分别是 `8551872`、`e479027`；v0.12.1 只修正发布文档。
+- 至 v0.12.3 有 80 个提交，发布历史按功能、基准、文档与版本提交分开；可用 `git log --oneline --decorate` 和 `git tag --list` 核对。v0.12.0 的功能与真实基准提交分别是 `8551872`、`e479027`；v0.12.2 的验收自查和基准提交是 `28a47c3`。
 - `LICENSE` 是 MIT 许可证，`moon.mod` 的 `license` 为 `MIT`。Git 提交作者为 `yiwnagmolu`；版权行标明维护者和贡献者。MIT 文本要求分发副本保留版权与许可声明。
 - 核心包只导入 `moonbitlang/core` 的 `math`、`debug`、`double`；基准启动器只使用 Node.js 内建模块。仓库不包含第三方实现代码或 UCI 原始 CSV。申报书声明 HNSW 代码为独立实现；仓库审查能确认无 vendored 参照实现，但无法单凭仓库证明所有历史创作过程。
 - 三份 UCI 数据集页面均标为 CC BY 4.0；基准报告给出作者、DOI、源链接和使用方式。运行器按固定 SHA-256 校验下载内容，数据缓存在仓库之外。
@@ -46,6 +63,8 @@
 ```sh
 moon info
 moon fmt --check
+moonc -v
+moon check --target wasm-gc --deny-warn
 moon test --target wasm-gc
 moon test --target js
 moon build --target wasm

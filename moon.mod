@@ -1,6 +1,6 @@
 name = "yiwnagmolu/moonhnsw"
 
-version = "0.12.2"
+version = "0.12.3"
 
 readme = "README.mbt.md"
 
