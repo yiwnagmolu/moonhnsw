@@ -4,6 +4,13 @@ All notable changes to moonhnsw are documented here. Releases are tagged in
 the repository; the binary serialization format stays backward compatible
 (newer loaders accept older payloads).
 
+## 0.12.1 — 2026-10-29
+
+### Changed
+
+- Update the README with the live Mooncakes module link and installation command.
+  Library code, public API, and serialization format are unchanged.
+
 ## 0.12.0 — 2026-10-29
 
 ### Added
