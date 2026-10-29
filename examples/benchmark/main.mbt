@@ -270,6 +270,24 @@ fn bench_metric(
       "search ef=\{ef}\t: recall@\{k}=\{fmt2(recall)}  qps=\{fmt2(qps)}  \{fmt2(speedup)}x brute  \{fmt2(dists_per_query)} dists/query (brute \{n})",
     )
   }
+  // MMR reranking is also distance-heavy; track its total graph + pair work.
+  let _ = idx.search_mmr(row_of(queries, 0, dim), k, lambda=0.5, ef=128)
+  let mut mmr_dists = 0L
+  let mut mmr_id_checksum = 0L
+  let tm = @bench.monotonic_clock_start()
+  for qi in 0..<n_queries {
+    let res = idx.search_mmr(row_of(queries, qi, dim), k, lambda=0.5, ef=128)
+    mmr_dists += idx.distance_computations()
+    for rank in 0..<res.length() {
+      mmr_id_checksum += (qi + 1).to_int64() *
+        (rank + 1).to_int64() *
+        (res[rank].id + 1).to_int64()
+    }
+  }
+  let mmr_us = @bench.monotonic_clock_end(tm)
+  println(
+    "mmr ef=128\t: qps=\{fmt2(n_queries.to_double() / (mmr_us / 1000000.0))}  \{fmt2(mmr_dists.to_double() / n_queries.to_double())} dists/query  id-check=\{mmr_id_checksum}",
+  )
 }
 
 ///|
