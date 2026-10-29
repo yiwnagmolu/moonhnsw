@@ -87,11 +87,14 @@ fn Heap::to_sorted_ascending(self : Heap) -> Array[(Double, Int32)] {
   while self.size() > 0 {
     drained.push(self.pop())
   }
-  let out : Array[(Double, Int32)] = []
-  let mut i = drained.length() - 1
-  while i >= 0 {
-    out.push(drained[i])
-    i -= 1
+  let mut left = 0
+  let mut right = drained.length() - 1
+  while left < right {
+    let pair = drained[left]
+    drained[left] = drained[right]
+    drained[right] = pair
+    left += 1
+    right -= 1
   }
-  out
+  drained
 }
