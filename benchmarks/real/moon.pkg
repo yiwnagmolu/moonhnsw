@@ -1,0 +1,13 @@
+import {
+  "yiwnagmolu/moonhnsw",
+  "moonbitlang/core/bench",
+}
+
+pkgtype(kind: "executable")
+
+options(
+  targets: {
+    "main.mbt": [ "js" ],
+    "main_other.mbt": [ "wasm", "wasm-gc", "native", "llvm" ],
+  },
+)
