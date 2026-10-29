@@ -1225,6 +1225,15 @@ test "MMR search trades relevance for diversity" {
   // Lambda 1 keeps the plain relevance ordering.
   assert_eq(idx.search_mmr(q, 5, lambda=1.0, ef=128), idx.search(q, 5, ef=128))
   assert_eq(idx.search_mmr(q, 20, lambda=0.5, ef=5).length(), 20)
+  // Reranking computes each candidate/selected pair only once.
+  let pool = idx.search_filtered(q, 128, ef=128, filter=fn(_) { true })
+  let graph_calls = idx.distance_computations()
+  let reranked = idx.search_mmr(q, 10, lambda=0.5, ef=128)
+  let mut pair_calls = 0L
+  for picked in 1..<reranked.length() {
+    pair_calls += (pool.length() - picked).to_int64()
+  }
+  assert_eq(idx.distance_computations(), graph_calls + pair_calls)
   // A single result is always the nearest neighbor.
   assert_eq(
     idx.search_mmr(q, 1, lambda=0.3, ef=128)[0].id,

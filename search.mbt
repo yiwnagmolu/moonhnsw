@@ -374,27 +374,23 @@ pub fn Hnsw::search_mmr(
   }
   let n = pool.length()
   let taken : Array[Bool] = Array::make(n, false)
+  // Each candidate only needs its maximum similarity to the selected set.
+  // Update it once per newly selected neighbor instead of recomputing every
+  // previously selected pair on every round.
+  let max_sims : Array[Double] = Array::make(n, -1.0e308)
   let out : Array[Neighbor] = []
   for _ in 0..<k {
     let mut best = -1
     let mut best_score = 0.0
     for i in 0..<n {
       if !taken[i] {
-        // Similarity is the negated distance; the redundancy penalty is the
-        // largest similarity to anything already selected (none on the
-        // first pick).
+        // Similarity is the negated distance; the first pick has no
+        // redundancy penalty.
         let relevance = -pool[i].distance
-        let mut max_sim = -1.0e308
-        for sel in out {
-          let sim = -self.dist_ids(pool[i].id, sel.id)
-          if sim > max_sim {
-            max_sim = sim
-          }
-        }
         let penalty = if out.length() == 0 {
           0.0
         } else {
-          (1.0 - lambda) * max_sim
+          (1.0 - lambda) * max_sims[i]
         }
         let score = lambda * relevance - penalty
         if best < 0 || score > best_score {
@@ -408,6 +404,16 @@ pub fn Hnsw::search_mmr(
     }
     taken[best] = true
     out.push(pool[best])
+    if out.length() < k && out.length() < n {
+      for i in 0..<n {
+        if !taken[i] {
+          let sim = -self.dist_ids(pool[i].id, pool[best].id)
+          if sim > max_sims[i] {
+            max_sims[i] = sim
+          }
+        }
+      }
+    }
   }
   out
 }
