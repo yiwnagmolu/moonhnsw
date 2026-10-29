@@ -4,6 +4,27 @@ All notable changes to moonhnsw are documented here. Releases are tagged in
 the repository; the binary serialization format stays backward compatible
 (newer loaders accept older payloads).
 
+## 0.11.2 — 2026-10-29
+
+### Changed
+
+- Reuse the input f32 vector while inserting L2 and inner-product data, and
+  reuse the normalized scratch vector for cosine. This removes an unused norm
+  pass and a per-insert query allocation/copy; stored vectors remain isolated
+  from later caller mutations.
+- Compute public `distance(Cosine, a, b)` with the same f32 normalization and
+  dot-product rounding without allocating two temporary arrays per call. The
+  benchmark now reports its throughput and distance checksum.
+- Read labels in a single preflighted little-endian bulk pass, and use bulk
+  f32 reads/writes for SQ8 bounds. Bulk read lengths now use overflow-safe
+  checks. Serialized format v5 and public APIs are unchanged.
+
+### Fixed
+
+- Keep candidates with `+Infinity` L2 distance in unbounded top-k searches.
+  Finite f32 inputs can overflow the f32 squared-distance accumulator; radius
+  searches still honor their explicit threshold.
+
 ## 0.11.1 — 2026-10-29
 
 ### Changed

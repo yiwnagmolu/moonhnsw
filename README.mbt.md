@@ -1,7 +1,7 @@
 # moonhnsw
 
 [![CI](https://github.com/yiwnagmolu/moonhnsw/actions/workflows/ci.yml/badge.svg)](https://github.com/yiwnagmolu/moonhnsw/actions/workflows/ci.yml)
-[![Version](https://img.shields.io/badge/version-0.11.1-blue)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.11.2-blue)](CHANGELOG.md)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
 Pure MoonBit approximate nearest-neighbor search: a local vector index built on the HNSW graph (Malkov & Yashunin, 2016) — the same algorithm inside [hnswlib](https://github.com/nmslib/hnswlib), [usearch](https://github.com/unum-cloud/usearch) and Qdrant.
@@ -178,6 +178,12 @@ and an ordered-result checksum. In a v0.11.1 L2 run with 2,000 vectors,
 per query. Its ordered-result checksum stayed the same across L2, inner
 product, cosine, 10k L2, and SQ8 runs. These are short, fixed-seed wasm-gc
 measurements; rerun them on your target before relying on wall-clock figures.
+
+Since v0.11.2, the same example also times 40,000 calls to the public
+`distance(Cosine, a, b)` helper and prints a distance checksum. The helper
+normalizes with the same f32 rounding as before while avoiding two temporary
+arrays per call. Insertion also avoids redundant vector copies; the bundled
+build timings are too variable to assign it a reliable wall-clock speedup.
 
 At 10k vectors the ef trade-off becomes visible: `ef=64` reaches 0.97 recall, `ef=128` reaches 1.00. At 100k the graph was 4 layers tall (~30 MB estimated); that random dataset needed `ef=256` for exact recall. SQ8 shrinks the estimated index from 0.53 MB to 0.34 MB at 2k vectors (the vector store itself drops 4x) at 0.99 recall, and built about 24% slower in this run.
 

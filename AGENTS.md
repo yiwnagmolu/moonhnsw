@@ -27,7 +27,8 @@ pure MoonBit HNSW approximate nearest-neighbor search library (module
   `calibrate_test.mbt`, and `adaptive_test.mbt` hold blackbox tests that
   exercise the package the way an external user would, with package-qualified
   names.
-- `examples/benchmark` runs in CI as a smoke test; `examples/benchmark-large`
+- `examples/benchmark` runs in CI as a smoke test (top-k, MMR, and the
+  public cosine distance helper); `examples/benchmark-large`
   (100k vectors) is for occasional manual runs only — never add it to CI.
 
 ## Commands
