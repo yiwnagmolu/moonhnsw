@@ -238,6 +238,7 @@ pub fn Hnsw::search(
   if query.length() != self.dim {
     raise DimMismatch(self.dim, query.length())
   }
+  validate_finite_vector(query)
   self.dist_calls = 0L
   if self.count == 0 || self.alive_count == 0 || k <= 0 {
     return []
@@ -283,6 +284,7 @@ pub fn Hnsw::search_filtered(
   if query.length() != self.dim {
     raise DimMismatch(self.dim, query.length())
   }
+  validate_finite_vector(query)
   self.dist_calls = 0L
   if self.count == 0 || self.alive_count == 0 || k <= 0 {
     return []
@@ -438,6 +440,7 @@ pub fn Hnsw::search_radius(
   if query.length() != self.dim {
     raise DimMismatch(self.dim, query.length())
   }
+  validate_finite_vector(query)
   if radius != radius || (self.distance is L2 && radius < 0.0) {
     raise InvalidParams("radius must be a valid distance for this metric")
   }

@@ -48,7 +48,7 @@ pub fn HnswParams::new(
 ///|
 /// Errors reported by the index.
 pub suberror HnswError {
-  /// Constructor arguments are out of range.
+  /// Invalid argument, including a NaN or infinite vector component.
   InvalidParams(String)
   /// A vector dimension does not match the index dimension.
   DimMismatch(Int32, Int32)

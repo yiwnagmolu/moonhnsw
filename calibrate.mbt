@@ -79,31 +79,13 @@ pub fn Hnsw::calibrate_ef(
     if q.length() != self.dim {
       raise DimMismatch(self.dim, q.length())
     }
+    validate_finite_vector(q)
   }
   let truth_k = if k < self.alive_count { k } else { self.alive_count }
   let thresholds : Array[Double] = []
   for query in queries {
-    self.q_scratch_source = self.q_scratch_reset
-    let q : FixedArray[Float] = if self.normalize {
-      let tmp : FixedArray[Float] = FixedArray::make(self.dim, 0.0)
-      let _ = copy_normalized(query, 0, tmp, 0, self.dim, true)
-      tmp
-    } else {
-      query
-    }
-    let nearest = Heap::{ items: [], is_min: false, }
-    for id in 0..<self.count {
-      if self.alive[id] {
-        let d = self.dist_query(q, id)
-        if nearest.size() < truth_k {
-          nearest.push(d, id)
-        } else if d < nearest.top().0 {
-          let _ = nearest.pop()
-          nearest.push(d, id)
-        }
-      }
-    }
-    thresholds.push(nearest.top().0)
+    let nearest = self.search_exact(query, truth_k)
+    thresholds.push(nearest[nearest.length() - 1].distance)
   }
   let trials : Array[EfTrial] = []
   let mut selected_ef = efs[efs.length() - 1]

@@ -42,6 +42,7 @@ pub fn Hnsw::search_filtered_adaptive(
   if query.length() != self.dim {
     raise DimMismatch(self.dim, query.length())
   }
+  validate_finite_vector(query)
   if ef_start < 1 || ef_max < ef_start {
     raise InvalidParams("ef_start must be >= 1 and ef_max >= ef_start")
   }

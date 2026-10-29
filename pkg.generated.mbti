@@ -120,10 +120,12 @@ pub fn Hnsw::save(Self) -> FixedArray[Byte]
 pub fn Hnsw::save_bytes(Self) -> Bytes
 pub fn Hnsw::search(Self, FixedArray[Float], Int32, ef? : Int32) -> Array[Neighbor] raise HnswError
 pub fn Hnsw::search_batch(Self, Array[FixedArray[Float]], Int32, ef? : Int32) -> Array[Array[Neighbor]] raise HnswError
+pub fn Hnsw::search_exact(Self, FixedArray[Float], Int32, filter? : (Int32) -> Bool) -> Array[Neighbor] raise HnswError
 pub fn Hnsw::search_filtered(Self, FixedArray[Float], Int32, ef? : Int32, filter~ : (Int32) -> Bool) -> Array[Neighbor] raise HnswError
 pub fn Hnsw::search_filtered_adaptive(Self, FixedArray[Float], Int32, ef_start? : Int32, ef_max? : Int32, filter~ : (Int32) -> Bool) -> AdaptiveSearchResult raise HnswError
 pub fn Hnsw::search_mmr(Self, FixedArray[Float], Int32, lambda? : Double, ef? : Int32, filter? : (Int32) -> Bool) -> Array[Neighbor] raise HnswError
 pub fn Hnsw::search_radius(Self, FixedArray[Float], Double, max_results? : Int32, filter? : (Int32) -> Bool) -> Array[Neighbor] raise HnswError
+pub fn Hnsw::search_radius_exact(Self, FixedArray[Float], Double, max_results? : Int32, filter? : (Int32) -> Bool) -> Array[Neighbor] raise HnswError
 pub fn Hnsw::shrink_to_fit(Self) -> Unit
 pub fn Hnsw::size(Self) -> Int32
 pub fn Hnsw::stats(Self) -> HnswStats

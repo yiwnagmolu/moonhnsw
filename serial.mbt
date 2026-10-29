@@ -497,6 +497,12 @@ pub fn Hnsw::load(data : FixedArray[Byte]) -> Hnsw raise HnswError {
     r.bytes_bulk(quants, total)
   } else {
     r.f32_bulk(vectors, total)
+    for value in vectors {
+      let v = value.to_double()
+      if !(v > -@double.infinity && v < @double.infinity) {
+        raise CorruptData("non-finite vector value")
+      }
+    }
   }
   let links : Array[Array[Array[Int32]]] = []
   for _ in 0..<count {

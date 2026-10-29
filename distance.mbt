@@ -10,6 +10,8 @@ pub fn distance(
   if a.length() != b.length() {
     raise DimMismatch(a.length(), b.length())
   }
+  validate_finite_vector(a)
+  validate_finite_vector(b)
   if metric is Cosine {
     // Match copy_normalized's f32 rounding without allocating two temporary
     // arrays for every pair. Zero vectors keep their original components.
@@ -42,6 +44,18 @@ pub fn distance(
     return -sum.to_double()
   }
   distance_between(metric, a, 0, b, 0, a.length())
+}
+
+///|
+/// NaN or infinity makes graph ordering, SQ8 bounds, and persistence invalid.
+/// Check inputs before any index mutation or distance work begins.
+fn validate_finite_vector(vector : FixedArray[Float]) -> Unit raise HnswError {
+  for value in vector {
+    let v = value.to_double()
+    if !(v > -@double.infinity && v < @double.infinity) {
+      raise InvalidParams("vector must contain only finite values")
+    }
+  }
 }
 
 ///|

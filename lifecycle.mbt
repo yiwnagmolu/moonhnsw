@@ -25,6 +25,7 @@ pub fn Hnsw::upsert_labeled(
   if vector.length() != self.dim {
     raise DimMismatch(self.dim, vector.length())
   }
+  validate_finite_vector(vector)
   for old in self.find_by_label(label) {
     let _ = self.delete(old)
   }
@@ -143,6 +144,19 @@ pub fn Hnsw::verify(self : Hnsw) -> Unit raise HnswError {
     raise CorruptData("scratch or bounds size mismatch")
   }
   if self.storage is SQ8 {
+    for j in 0..<self.dim {
+      let lo = self.q_mins[j].to_double()
+      let hi = self.q_maxs[j].to_double()
+      let scale = self.q_scales[j].to_double()
+      if !(lo > -@double.infinity &&
+        lo < @double.infinity &&
+        hi > -@double.infinity &&
+        hi < @double.infinity &&
+        scale > -@double.infinity &&
+        scale < @double.infinity) {
+        raise CorruptData("non-finite SQ8 bounds or scale")
+      }
+    }
     if self.q_frozen != (self.count >= FREEZE_AT) {
       raise CorruptData("SQ8 frozen state inconsistent with vector count")
     }

@@ -68,6 +68,7 @@ fn Hnsw::insert(
   if vector.length() != self.dim {
     raise DimMismatch(self.dim, vector.length())
   }
+  validate_finite_vector(vector)
   let id = self.count
   self.q_scratch_source = self.q_scratch_reset
   let off = id * self.dim

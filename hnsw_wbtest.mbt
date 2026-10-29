@@ -1615,6 +1615,53 @@ test "loader rejects a valid-checksum payload with truncated labels" {
 }
 
 ///|
+test "loader rejects non-finite f32 vector even with valid checksum" {
+  let idx = Hnsw::new(1, L2)
+  let _ = idx.add(FixedArray::from_array([1.0]))
+  let payload = idx.save()
+  // v5 header (47 bytes), one alive flag, one label, one storage byte.
+  payload[57] = b'\x00'
+  payload[58] = b'\x00'
+  payload[59] = b'\xc0'
+  payload[60] = b'\x7f' // quiet NaN in little-endian f32
+  let tail = payload.length() - 4
+  let crc = crc32_of(payload, tail)
+  payload[tail] = crc.to_byte()
+  payload[tail + 1] = (crc >> 8).to_byte()
+  payload[tail + 2] = (crc >> 16).to_byte()
+  payload[tail + 3] = (crc >> 24).to_byte()
+  let loaded : Result[Hnsw, HnswError] = Ok(Hnsw::load(payload)) catch {
+    e => Err(e)
+  }
+  match loaded {
+    Err(CorruptData(msg)) => assert_true(msg.contains("non-finite"))
+    _ => fail("expected the vector value to be rejected")
+  }
+}
+
+///|
+test "loader rejects non-finite SQ8 bounds before freeze" {
+  let idx = Hnsw::new(1, L2, params=HnswParams::new(storage=SQ8))
+  let _ = idx.add(FixedArray::from_array([1.0]))
+  let payload = idx.save()
+  // v5 header + alive + label + storage, then frozen flag at byte 57.
+  payload[58] = b'\x00'
+  payload[59] = b'\x00'
+  payload[60] = b'\xc0'
+  payload[61] = b'\x7f'
+  let tail = payload.length() - 4
+  let crc = crc32_of(payload, tail)
+  payload[tail] = crc.to_byte()
+  payload[tail + 1] = (crc >> 8).to_byte()
+  payload[tail + 2] = (crc >> 16).to_byte()
+  payload[tail + 3] = (crc >> 24).to_byte()
+  let loaded : Result[Hnsw, HnswError] = Ok(Hnsw::load(payload)) catch {
+    e => Err(e)
+  }
+  assert_true(loaded is Err(CorruptData(_)))
+}
+
+///|
 test "loader checks CRC before allocations and rejects valid-CRC junk" {
   let idx = Hnsw::new(2, L2)
   let _ = idx.add(FixedArray::from_array([1.0, 2.0]))
