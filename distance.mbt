@@ -11,11 +11,35 @@ pub fn distance(
     raise DimMismatch(a.length(), b.length())
   }
   if metric is Cosine {
-    let norm_a : FixedArray[Float] = FixedArray::make(a.length(), 0.0)
-    let norm_b : FixedArray[Float] = FixedArray::make(b.length(), 0.0)
-    let _ = copy_normalized(a, 0, norm_a, 0, a.length(), true)
-    let _ = copy_normalized(b, 0, norm_b, 0, b.length(), true)
-    return distance_between(Cosine, norm_a, 0, norm_b, 0, a.length())
+    // Match copy_normalized's f32 rounding without allocating two temporary
+    // arrays for every pair. Zero vectors keep their original components.
+    let mut norm_a_sq = 0.0
+    let mut norm_b_sq = 0.0
+    for i in 0..<a.length() {
+      let av = a.unsafe_get(i).to_double()
+      let bv = b.unsafe_get(i).to_double()
+      norm_a_sq += av * av
+      norm_b_sq += bv * bv
+    }
+    let normalize_a = norm_a_sq > 0.0
+    let normalize_b = norm_b_sq > 0.0
+    let inv_a = if normalize_a { 1.0 / norm_a_sq.sqrt() } else { 0.0 }
+    let inv_b = if normalize_b { 1.0 / norm_b_sq.sqrt() } else { 0.0 }
+    let mut sum : Float = 0.0
+    for i in 0..<a.length() {
+      let av = if normalize_a {
+        Float::from_double(a.unsafe_get(i).to_double() * inv_a)
+      } else {
+        a.unsafe_get(i)
+      }
+      let bv = if normalize_b {
+        Float::from_double(b.unsafe_get(i).to_double() * inv_b)
+      } else {
+        b.unsafe_get(i)
+      }
+      sum += av * bv
+    }
+    return -sum.to_double()
   }
   distance_between(metric, a, 0, b, 0, a.length())
 }

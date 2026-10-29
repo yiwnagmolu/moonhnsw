@@ -71,30 +71,28 @@ fn Hnsw::insert(
   let id = self.count
   self.q_scratch_source = self.q_scratch_reset
   let off = id * self.dim
-  // Normalize (when the metric needs it) into scratch, then store at the
-  // active precision.
-  let _ = copy_normalized(
-    vector,
-    0,
-    self.f_scratch,
-    0,
-    self.dim,
-    self.normalize,
-  )
+  // L2 and inner product can read the caller's f32 vector directly. Cosine
+  // needs a normalized copy that remains stable throughout graph insertion.
+  let q : FixedArray[Float] = if self.normalize {
+    let _ = copy_normalized(vector, 0, self.f_scratch, 0, self.dim, true)
+    self.f_scratch
+  } else {
+    vector
+  }
   if self.storage is Float32 {
     self.ensure_vector_capacity(id + 1)
-    FixedArray::unsafe_blit(self.vectors, off, self.f_scratch, 0, self.dim)
+    FixedArray::unsafe_blit(self.vectors, off, q, 0, self.dim)
   } else if !self.q_frozen {
     // Full floats until the quantization bounds freeze at FREEZE_AT.
     self.ensure_vector_capacity(id + 1)
-    FixedArray::unsafe_blit(self.vectors, off, self.f_scratch, 0, self.dim)
-    self.observe_bounds(self.f_scratch, 0)
+    FixedArray::unsafe_blit(self.vectors, off, q, 0, self.dim)
+    self.observe_bounds(q, 0)
     if id + 1 == FREEZE_AT {
-      self.freeze_and_quantize_all(self.f_scratch)
+      self.freeze_and_quantize_all(q)
     }
   } else {
     self.ensure_quant_capacity(id + 1)
-    self.quantize_into(self.f_scratch, 0, self.quants, off)
+    self.quantize_into(q, 0, self.quants, off)
   }
   let level = self.random_level()
   let node_links : Array[Array[Int32]] = []
@@ -113,16 +111,8 @@ fn Hnsw::insert(
     self.max_level = level
     return id
   }
-  // The stored (possibly normalized) vector drives all distance computations.
-  // Under frozen SQ8 the full-precision copy in f_scratch serves as the
-  // query; the byte store only holds the indexed side.
-  let q : FixedArray[Float] = if self.q_active() {
-    self.f_scratch
-  } else {
-    let qc : FixedArray[Float] = FixedArray::make(self.dim, 0.0)
-    FixedArray::unsafe_blit(qc, 0, self.vectors, off, self.dim)
-    qc
-  }
+  // `q` holds exactly the f32 values stored at this id (or the full-precision
+  // query for frozen SQ8), so graph construction needs no second copy.
   // Greedy descent through layers above the node's level.
   let mut ep = self.entry
   let mut ep_dist = self.dist_query(q, ep)

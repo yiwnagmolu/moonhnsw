@@ -111,7 +111,7 @@ fn Hnsw::search_layer(
   ef : Int32,
   layer : Int32,
   include_dead~ : Bool = false,
-  cutoff~ : Double = 1.0e308,
+  cutoff~ : Double = @double.infinity,
   accept~ : (Int32) -> Bool = fn(_) { true },
 ) -> Array[(Double, Int32)] {
   let stamp = self.next_stamp()

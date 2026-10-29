@@ -54,15 +54,6 @@ fn ByteBuf::put_u64(self : ByteBuf, v : UInt64) -> Unit {
 }
 
 ///|
-fn ByteBuf::put_f32(self : ByteBuf, v : Float) -> Unit {
-  let bits = v.reinterpret_as_uint()
-  self.put_byte(bits.to_byte())
-  self.put_byte((bits >> 8).to_byte())
-  self.put_byte((bits >> 16).to_byte())
-  self.put_byte((bits >> 24).to_byte())
-}
-
-///|
 /// Appends `count` f32 values in one bounds-checked pass.
 fn ByteBuf::put_f32_bulk(
   self : ByteBuf,
@@ -191,9 +182,29 @@ fn ByteReader::u64(self : ByteReader) -> UInt64 raise HnswError {
 }
 
 ///|
-fn ByteReader::f32(self : ByteReader) -> Float raise HnswError {
-  let bits = self.u32()
-  Float::reinterpret_from_int(bits)
+/// Reads labels with one length check instead of eight checked byte reads
+/// per label. The wire representation remains little-endian u64.
+fn ByteReader::u64_bulk(
+  self : ByteReader,
+  dst : Array[UInt64],
+  count : Int32,
+) -> Unit raise HnswError {
+  if count < 0 ||
+    count.to_int64() * 8L > (self.data.length() - self.pos).to_int64() {
+    raise CorruptData("unexpected end of data")
+  }
+  for _ in 0..<count {
+    let mut value = 0UL
+    for b in 0..<8 {
+      value = value |
+        (
+          (self.data.unsafe_get(self.pos + b).to_int() & 0xFF).to_uint64() <<
+          (b * 8)
+        )
+    }
+    dst.push(value)
+    self.pos += 8
+  }
 }
 
 ///|
@@ -203,7 +214,8 @@ fn ByteReader::f32_bulk(
   dst : FixedArray[Float],
   count : Int32,
 ) -> Unit raise HnswError {
-  if self.pos + count * 4 > self.data.length() {
+  if count < 0 ||
+    count.to_int64() * 4L > (self.data.length() - self.pos).to_int64() {
     raise CorruptData("unexpected end of data")
   }
   let mut i = 0
@@ -227,7 +239,7 @@ fn ByteReader::bytes_bulk(
   dst : FixedArray[Byte],
   count : Int32,
 ) -> Unit raise HnswError {
-  if self.pos + count > self.data.length() {
+  if count < 0 || count > self.data.length() - self.pos {
     raise CorruptData("unexpected end of data")
   }
   let mut i = 0
@@ -246,7 +258,8 @@ fn ByteReader::i32_bulk(
   dst : Array[Int32],
   count : Int32,
 ) -> Unit raise HnswError {
-  if self.pos + count * 4 > self.data.length() {
+  if count < 0 ||
+    count.to_int64() * 4L > (self.data.length() - self.pos).to_int64() {
     raise CorruptData("unexpected end of data")
   }
   let mut i = 0
@@ -316,21 +329,9 @@ pub fn Hnsw::save(self : Hnsw) -> FixedArray[Byte] {
   )
   if self.storage is SQ8 {
     b.put_byte(if self.q_frozen { b'\x01' } else { b'\x00' })
-    let mut j = 0
-    while j < self.dim {
-      b.put_f32(self.q_mins.unsafe_get(j))
-      j += 1
-    }
-    j = 0
-    while j < self.dim {
-      b.put_f32(self.q_maxs.unsafe_get(j))
-      j += 1
-    }
-    j = 0
-    while j < self.dim {
-      b.put_f32(self.q_scales.unsafe_get(j))
-      j += 1
-    }
+    b.put_f32_bulk(self.q_mins, self.dim)
+    b.put_f32_bulk(self.q_maxs, self.dim)
+    b.put_f32_bulk(self.q_scales, self.dim)
   }
   let total = self.count * self.dim
   if self.q_active() {
@@ -428,11 +429,7 @@ pub fn Hnsw::load(data : FixedArray[Byte]) -> Hnsw raise HnswError {
   // Version 3 carries one label per vector; earlier versions used the id.
   let labels : Array[UInt64] = []
   if version >= 3 {
-    let mut i = 0
-    while i < count {
-      labels.push(r.u64())
-      i += 1
-    }
+    r.u64_bulk(labels, count)
   } else {
     let mut i = 0
     while i < count {
@@ -476,21 +473,9 @@ pub fn Hnsw::load(data : FixedArray[Byte]) -> Hnsw raise HnswError {
       raise CorruptData("invalid SQ8 frozen flag")
     }
     q_frozen = frozen_flag == 1
-    let mut j = 0
-    while j < dim {
-      q_mins[j] = r.f32()
-      j += 1
-    }
-    j = 0
-    while j < dim {
-      q_maxs[j] = r.f32()
-      j += 1
-    }
-    j = 0
-    while j < dim {
-      q_scales[j] = r.f32()
-      j += 1
-    }
+    r.f32_bulk(q_mins, dim)
+    r.f32_bulk(q_maxs, dim)
+    r.f32_bulk(q_scales, dim)
   }
   let total = count * dim
   let quantized = storage is SQ8 && q_frozen

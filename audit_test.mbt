@@ -56,3 +56,51 @@ test "public api: batch distance count sums every query" {
   assert_eq(idx.search_mmr(a, 0).length(), 0)
   assert_eq(idx.distance_computations(), 0L)
 }
+
+///|
+test "public api: inserted vectors are isolated from caller mutation" {
+  for
+    metric in [
+      @moonhnsw.Distance::L2,
+      @moonhnsw.Distance::InnerProduct,
+      @moonhnsw.Distance::Cosine,
+    ] {
+    let idx = @moonhnsw.Hnsw::new(2, metric)
+    let input : FixedArray[Float] = FixedArray::from_array([3.0, 4.0])
+    let id = idx.add(input)
+    let stored = idx.get_vector(id)
+    input[0] = 99.0
+    assert_eq(idx.get_vector(id), stored)
+  }
+  let sq8 = @moonhnsw.Hnsw::new(
+    2,
+    @moonhnsw.Distance::L2,
+    params=@moonhnsw.HnswParams::new(storage=@moonhnsw.Storage::SQ8),
+  )
+  for i in 0..<256 {
+    let _ = sq8.add(
+      FixedArray::from_array([Float::from_double(i.to_double()), 3.0]),
+    )
+  }
+  let input : FixedArray[Float] = FixedArray::from_array([17.0, 3.0])
+  let id = sq8.add(input)
+  let stored = sq8.get_vector(id)
+  input[0] = 99.0
+  assert_eq(sq8.get_vector(id), stored)
+}
+
+///|
+test "public api: top-k retains a finite vector with infinite L2 distance" {
+  let idx = @moonhnsw.Hnsw::new(1, @moonhnsw.Distance::L2)
+  let far : FixedArray[Float] = FixedArray::from_array([1.0e20])
+  let query : FixedArray[Float] = FixedArray::from_array([0.0])
+  let _ = idx.add(far)
+  let hits = idx.search(query, 1)
+  assert_eq(hits.length(), 1)
+  assert_eq(hits[0].id, 0)
+  assert_true(hits[0].distance > 1.0e308)
+  assert_eq(idx.search_filtered(query, 1, filter=fn(_) { true }), hits)
+  assert_eq(idx.search_mmr(query, 1), hits)
+  assert_eq(idx.search_radius(query, 1.0e308).length(), 0)
+  assert_eq(idx.search_radius(query, hits[0].distance), hits)
+}

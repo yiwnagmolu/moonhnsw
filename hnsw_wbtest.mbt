@@ -187,6 +187,31 @@ fn normalize_dataset(
 }
 
 ///|
+test "cosine helper matches f32 normalized distance without scratch arrays" {
+  let dim = 4
+  let raw = gen_dataset(1001UL, 20, dim, -2.0, 2.0)
+  let vectors : Array[FixedArray[Float]] = [
+    FixedArray::make(dim, 0.0),
+    FixedArray::from_array([3.0, 4.0, 0.0, -1.0]),
+  ]
+  for i in 0..<20 {
+    vectors.push(row_of(raw, i, dim))
+  }
+  for a in vectors {
+    for b in vectors {
+      let norm_a : FixedArray[Float] = FixedArray::make(dim, 0.0)
+      let norm_b : FixedArray[Float] = FixedArray::make(dim, 0.0)
+      let _ = copy_normalized(a, 0, norm_a, 0, dim, true)
+      let _ = copy_normalized(b, 0, norm_b, 0, dim, true)
+      assert_eq(
+        distance(Cosine, a, b),
+        distance_between(Cosine, norm_a, 0, norm_b, 0, dim),
+      )
+    }
+  }
+}
+
+///|
 fn recall_of(
   metric : Distance,
   seed : UInt64,
@@ -1163,8 +1188,10 @@ test "SQ8 roundtrip, dequantization and clamping" {
     assert_true((approx[j].to_double() - exact[j].to_double()).abs() < 0.01)
   }
   // Frozen store round-trips bit-exactly.
-  let restored = Hnsw::load(idx.save())
+  let payload = idx.save()
+  let restored = Hnsw::load(payload)
   assert_true(restored.q_frozen)
+  assert_eq(restored.save(), payload)
   let queries = gen_dataset(153UL, 4, dim, 0.0, 1.0)
   for qi in 0..<4 {
     assert_eq(
@@ -1546,8 +1573,8 @@ test "legacy v1 through v4 payloads still load" {
     if version >= 3 {
       b.put_u64(99UL) // label
     }
-    b.put_f32(1.0)
-    b.put_f32(2.0)
+    let vector : FixedArray[Float] = FixedArray::from_array([1.0, 2.0])
+    b.put_f32_bulk(vector, 2)
     b.put_u32(1) // one layer
     b.put_u32(0) // no links
     if version >= 4 {
@@ -1559,6 +1586,32 @@ test "legacy v1 through v4 payloads still load" {
     assert_eq(idx.label_of(0), if version >= 3 { 99UL } else { 0UL })
     idx.verify()
   }
+}
+
+///|
+test "loader rejects a valid-checksum payload with truncated labels" {
+  let b = ByteBuf::new()
+  for ch in [b'M', b'H', b'N', b'S', b'W'] {
+    b.put_byte(ch)
+  }
+  b.put_byte(b'\x04') // v4
+  b.put_u32(1) // dim
+  b.put_byte(b'\x00') // L2
+  b.put_u32(16) // m
+  b.put_u32(200) // ef_construction
+  b.put_u64(42UL) // seed
+  b.put_u32(0) // entry
+  b.put_u32(0) // max_level
+  b.put_u32(10) // count
+  b.put_u64(42UL) // rng state
+  for _ in 0..<10 {
+    b.put_byte(b'\x01') // alive, but no labels follow
+  }
+  b.put_u32(crc32_of(b.buf, b.len).reinterpret_as_int())
+  let loaded : Result[Hnsw, HnswError] = Ok(Hnsw::load(b.to_fixed())) catch {
+    e => Err(e)
+  }
+  assert_true(loaded is Err(CorruptData(_)))
 }
 
 ///|

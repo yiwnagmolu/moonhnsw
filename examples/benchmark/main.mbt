@@ -291,6 +291,30 @@ fn bench_metric(
 }
 
 ///|
+fn bench_cosine_helper() -> Unit raise @moonhnsw.HnswError {
+  let dim = 32
+  let n = 2000
+  let rounds = 20
+  let raw = gen_dataset(20261029UL, n, dim)
+  let vectors : Array[FixedArray[Float]] = []
+  for i in 0..<n {
+    vectors.push(row_of(raw, i, dim))
+  }
+  let query = vectors[0]
+  let mut checksum = 0.0
+  let start = @bench.monotonic_clock_start()
+  for _ in 0..<rounds {
+    for vector in vectors {
+      checksum += @moonhnsw.distance(@moonhnsw.Distance::Cosine, query, vector)
+    }
+  }
+  let us = @bench.monotonic_clock_end(start)
+  println(
+    "cosine helper   : qps=\{fmt2((n * rounds).to_double() / (us / 1000000.0))}  checksum=\{checksum}",
+  )
+}
+
+///|
 fn run_all() -> Unit raise @moonhnsw.HnswError {
   let dim = 32
   let k = 10
@@ -352,6 +376,7 @@ fn run_all() -> Unit raise @moonhnsw.HnswError {
     20261024UL,
     storage=@moonhnsw.Storage::SQ8,
   )
+  bench_cosine_helper()
 }
 
 ///|
