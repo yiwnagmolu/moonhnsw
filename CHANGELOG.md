@@ -4,6 +4,28 @@ All notable changes to moonhnsw are documented here. Releases are tagged in
 the repository; the binary serialization format stays backward compatible
 (newer loaders accept older payloads).
 
+## 0.12.4 — 2026-10-30
+
+### Fixed
+
+- Keep resolution for very small nonzero SQ8 feature ranges and score
+  out-of-range queries against stored vectors without clamping the query.
+- Recover finite L2 and inner-product distances when f32 intermediate
+  arithmetic overflows; exact and graph search now retain valid ordering.
+- Repair the running bounds of older, pre-freeze SQ8 payloads on load so
+  subsequent insertions use the actual stored range.
+- Make benchmark example failures return a nonzero process status so CI
+  cannot report a successful smoke run after a runtime error.
+
+### Added
+
+- A standard GitHub homepage `README.md` with a complete installation and
+  runnable usage example, alongside the detailed Mooncakes README.
+- UCI Optdigits as a fourth real-data benchmark, adding an official
+  train/test split with 64-dimensional features and pinned source hashes.
+- Boundary tests for the corrected SQ8 and extreme Float32 distances (89 tests
+  on each locally available backend).
+
 ## 0.12.3 — 2026-10-30
 
 ### Changed

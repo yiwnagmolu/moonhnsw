@@ -1,7 +1,7 @@
 # moonhnsw
 
 [![CI](https://github.com/yiwnagmolu/moonhnsw/actions/workflows/ci.yml/badge.svg)](https://github.com/yiwnagmolu/moonhnsw/actions/workflows/ci.yml)
-[![Version](https://img.shields.io/badge/version-0.12.3-blue)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.12.4-blue)](CHANGELOG.md)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
 Pure MoonBit approximate nearest-neighbor search: a local vector index built on the HNSW graph (Malkov & Yashunin, 2016) — the same algorithm inside [hnswlib](https://github.com/nmslib/hnswlib), [usearch](https://github.com/unum-cloud/usearch) and Qdrant.
@@ -15,7 +15,7 @@ Feed in `f32` vectors, get back the approximate top-k nearest neighbors. No FFI,
 - **Introspection**: `stats()` reports per-layer node counts, average degree and a rough memory estimate; `get_vector(id)` and `contains(id)` expose the stored data; `export_dot(layer)` renders any layer as Graphviz DOT; `Neighbor` and `HnswStats` derive `Eq` / `Debug` / `ToJson`, so results drop straight into assertions, logs and JSON pipelines.
 - **External labels**: `add_labeled(vector, label)` tags each vector with a `UInt64` key (a document or chunk id); labels persist through `save` / `load` and `compact`.
 - **Composable**: `absorb()` merges another index (keeping labels), `copy()` deep-clones, and `save_bytes()` / `load_bytes()` wrap the payload as `Bytes` for binary pipelines.
-- **SQ8 scalar quantization**: `storage=SQ8` learns per-dimension bounds from the first 256 vectors and then stores one byte per dimension. The vector store is about 4x smaller; retrieval quality depends on the data and values outside the learned range clamp.
+- **SQ8 scalar quantization**: `storage=SQ8` learns per-dimension bounds from the first 256 vectors and then stores one byte per dimension. The vector store is about 4x smaller; retrieval quality depends on the data. Stored vectors added after freezing clamp to the learned range; queries keep their original values when distances are calculated.
 - **MMR diverse search**: `search_mmr(query, k, lambda)` re-ranks a wide candidate pool for relevance-vs-redundancy, the de-duplication step RAG contexts need.
 - **Empirical ef calibration**: `calibrate_ef` measures recall@k against an exact scan of representative queries and recommends the smallest tested beam width meeting your target.
 - **Adaptive filtered retrieval**: `search_filtered_adaptive` widens an unfiltered candidate pool until it contains `k` filter matches or reaches a configured cap; it reports rounds and distance work.
@@ -23,17 +23,17 @@ Feed in `f32` vectors, get back the approximate top-k nearest neighbors. No FFI,
 - **Integrity-checked persistence**: payloads carry a CRC-32 trailer, so flipped bits and silent truncation are rejected on load instead of surfacing as degraded searches.
 - **Three metrics** with a smaller-is-closer convention: `L2` (squared Euclidean), `InnerProduct` (negated dot product), `Cosine` (vectors normalized once on insertion).
 - **Tunable** `m`, `ef_construction`, and per-query `ef` — the standard recall/speed trade-off knobs.
-- **Allocation-aware storage**: vectors live in one flattened `FixedArray[Float]`; traversal marks visited nodes with generation stamps instead of hash sets; distances accumulate in f32 like hnswlib.
+- **Allocation-aware storage**: Float32 vectors live in one flattened `FixedArray[Float]`, while frozen SQ8 vectors live in a byte array; traversal marks visited nodes with generation stamps instead of hash sets. Common Float32 distances accumulate in f32, with a Double fallback for extreme finite values.
 - **Self-contained serialization**: one `save()` call produces a byte buffer you can write anywhere; `load()` restores an index that answers searches identically and keeps accepting insertions.
 - **Typed errors** (`HnswError`) with readable messages.
 - **Finite-input checks**: NaN and infinite vectors/queries are rejected before graph mutation; loading also validates stored values after checksum verification.
 
 ## Quick start
 
-The module is available on [Mooncakes](https://mooncakes.io/docs/yiwnagmolu/moonhnsw/). From your project root, add it to `moon.mod`:
+The module is available on [Mooncakes](https://mooncakes.io/docs/yiwnagmolu/moonhnsw/). To start from an empty project, run `moon new moonhnsw-demo` and `cd moonhnsw-demo`. Then add the published version:
 
 ```sh
-moon add yiwnagmolu/moonhnsw
+moon add yiwnagmolu/moonhnsw@0.12.4
 ```
 
 In the `moon.pkg` of the package using the library (for example, `cmd/main/moon.pkg`), add:
@@ -42,9 +42,11 @@ In the `moon.pkg` of the package using the library (for example, `cmd/main/moon.
 import {
   "yiwnagmolu/moonhnsw" @moonhnsw,
 }
+
+pkgtype(kind: "executable")
 ```
 
-Then put this complete example in `cmd/main/main.mbt` and run `moon run cmd/main` (or add `--target wasm-gc` / `--target js`):
+Then put this complete example in `cmd/main/main.mbt` and run `moon run --target wasm-gc cmd/main` (or choose another installed target):
 
 ```mbt nocheck
 ///|
@@ -162,26 +164,28 @@ the quantized values stored by the index.
 | `m` | 16 | Links per node on upper layers (layer 0 keeps `2m`). 12–48 is the usual range; higher = better recall, more memory. |
 | `ef_construction` | 200 | Beam width while inserting. 100–500; higher builds a better graph. |
 | `ef` (per search) | 64 | Beam width at query time. `ef >= k` is enforced; 64–512 covers most workloads. |
-| `storage` | `Float32` | `SQ8` stores one byte per dimension after learning bounds from the first 256 vectors (~4x smaller vector store, data-dependent recall, out-of-range values clamp). |
+| `storage` | `Float32` | `SQ8` stores one byte per dimension after learning bounds from the first 256 vectors (~4x smaller vector store, data-dependent recall); later inserted values clamp to those bounds, while queries are not clamped. |
 
 ## Benchmarks
 
 The reproducible [real-data benchmark](docs/real-benchmarks.md) uses held-out
-queries from three UCI datasets and the JS release backend, covering L2,
-InnerProduct and Cosine. On this Windows Ryzen 7 5800H run of v0.12.2, L2
-Float32 at `ef=64` reached 7,786 QPS on 7,494 pen-digit vectors (exact scan:
-819 QPS) and 4,665 QPS on 16,000 letter vectors (exact scan: 391 QPS).
-Tie-aware recall@10 was 1.000 on both; the letter dataset has
-many equal-distance vectors, so strict ID overlap was 0.9445. SQ8 used about
-25% less serialized space on those two datasets, with lower recall. These are
-median-of-three short query runs, not a general throughput guarantee. On the
-third dataset, Wine Quality, SQ8 tie-aware recall was only 0.9285 at `ef=64`;
-quantization should be validated for each workload. The report includes all
-ef widths, metrics, source hashes and raw logs.
+queries from four UCI datasets (11–64 dimensions) and the JS release backend,
+covering L2, InnerProduct and Cosine. On this Windows Ryzen 7 5800H run of
+v0.12.4, L2 Float32 at `ef=64` reached 7,172 QPS on 7,494 pen-digit vectors
+(exact scan: 847 QPS), 5,041 QPS on 16,000 letter vectors (exact: 332 QPS),
+and 2,596 QPS on 3,823 64-dimensional optical-digit vectors (exact: 472 QPS).
+Tie-aware recall@10 was 1.000 on those three Float32 workloads; letter strict
+ID overlap was 0.9445 because many vectors tie at the cutoff distance. SQ8
+used less serialized space with data-dependent recall: at `ef=64`, its
+tie-aware recall was 0.9940 on pen digits and letters, 0.9615 on Wine Quality,
+and 0.9955 on optical digits. These are median-of-three short query runs, not
+a general throughput guarantee. The 64-dimensional image features are not a
+proxy for high-dimensional text embeddings. The report includes all ef widths,
+metrics, source hashes and raw logs.
 The [acceptance self-audit](docs/acceptance-audit.md) maps the original project
 proposal to code, tests, benchmark evidence and remaining measurement limits.
 
-Measured with the bundled `examples/benchmark` on uniform random data (dim=32, m=16, ef_construction=200, k=10), executed on the **wasm-gc** backend via `moonrun` on Windows. The 2k and 10k rows were rerun for v0.11.0 on 2026-10-28 (100 queries at 2k, 50 at 10k); the 100k row is an earlier v0.10.0 manual run. Wall-clock numbers vary by run and machine. Speedups use a fair single-pass brute-force top-k in the same process; `dists/query` counts distance computations.
+The following table is historical context from the bundled `examples/benchmark` on uniform random data (dim=32, m=16, ef_construction=200, k=10), executed on the **wasm-gc** backend via `moonrun` on Windows. The 2k and 10k rows were rerun for v0.11.0 on 2026-10-28 (100 queries at 2k, 50 at 10k); the 100k row is an earlier v0.10.0 manual run. Its SQ8 row predates the v0.12.4 distance correction and is not a current-version quality or speed claim. Wall-clock numbers vary by run and machine. Speedups use a fair single-pass brute-force top-k in the same process; `dists/query` counts distance computations.
 
 | Metric | n | Build | ef=64 | ef=128 | ef=256 |
 | --- | --- | --- | --- | --- | --- |
@@ -237,8 +241,8 @@ layer 0   a─b─c─d─e─f─g─h─i─...        (all nodes, beam search
   Insertion draws the node's top layer (SplitMix64 PRNG, seeded), descends greedily from the entry point, then runs a beam search (`ef_construction`) per layer and connects via the diversity heuristic (Algorithm 4 of the paper).
 - New nodes keep `m` links per layer; overflowing neighbor lists of existing nodes are re-selected with the same heuristic.
 - Beam search uses a binary heap for candidates (min) and results (max), and an O(1) generation-stamp array for the visited set.
-- Distance accumulation stays in `f32` (as in hnswlib): inputs are f32 and only comparisons matter, so skipping per-element f64 widening is measurably faster on every backend.
-- Storage layout: one flattened `FixedArray[Float]` of `count * dim` values, doubled geometrically; graph edges as `Array[Array[Array[Int]]]`.
+- Float32 storage accumulates distances in `f32`; frozen SQ8 decodes stored byte values and scores them against the original query using `Double`, including queries outside learned bounds.
+- Storage layout: Float32 vectors use one flattened `FixedArray[Float]` of `count * dim` values, doubled geometrically; frozen SQ8 uses one byte per component. Graph edges use `Array[Array[Array[Int]]]`.
 - Serialization is little-endian with a magic header and version byte; every length and id is validated on load.
 
 ## Limitations & roadmap

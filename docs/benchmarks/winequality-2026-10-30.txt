@@ -1,26 +1,26 @@
 source=https://archive.ics.uci.edu/ml/machine-learning-databases/wine-quality/winequality-white.csv sha256=76c3f809815c17c07212622f776311faeb31e87610d52c26d87d6e361b169836
-module=yiwnagmolu/moonhnsw version=0.12.2
+module=yiwnagmolu/moonhnsw version=0.12.4
 runtime=v24.21.0 platform=win32/x64 cpu=AMD Ryzen 7 5800H with Radeon Graphics
+Finished. moon: no work to do
 Artifacts:
   yiwnagmolu/moonhnsw/benchmarks/real  js  E:\moonbit\moonhnsw\_build\js\release\build\benchmarks\real\real.js
-Finished. moon: no work to do
 dataset=winequality train=4000 queries=200 dim=11 k=10
-metric=L2 storage=Float32 build_ms=1318.6 payload_MiB=0.65 est_MiB=0.73
-  exact: median_qps=3580.67 dists/query=4000 checksum=6578855433
-  ef=64: id_recall@10=0.991 tie_recall@10=1 median_qps=15754.11 dists/query=277.18 checksum=6578774745
-  ef=128: id_recall@10=0.993 tie_recall@10=1 median_qps=7638.31 dists/query=389.27 checksum=6578854308
-  ef=256: id_recall@10=0.991 tie_recall@10=1 median_qps=4531.29 dists/query=563.03 checksum=6578739843
-metric=L2 storage=SQ8 build_ms=1040.16 payload_MiB=0.52 est_MiB=0.61
-  ef=64: id_recall@10=0.923 tie_recall@10=0.9285 median_qps=17722.8 dists/query=275.92 checksum=6539134734
-  ef=128: id_recall@10=0.922 tie_recall@10=0.9285 median_qps=8341.81 dists/query=388.43 checksum=6539163801
-  ef=256: id_recall@10=0.923 tie_recall@10=0.9285 median_qps=4929.79 dists/query=562.37 checksum=6539061795
-metric=InnerProduct storage=Float32 build_ms=944.22 payload_MiB=0.5 est_MiB=0.59
-  exact: median_qps=3702.07 dists/query=4000 checksum=5603879190
-  ef=64: id_recall@10=1 tie_recall@10=1 median_qps=15784.57 dists/query=254.13 checksum=5603879190
-  ef=128: id_recall@10=1 tie_recall@10=1 median_qps=10375.7 dists/query=299.35 checksum=5603879190
-  ef=256: id_recall@10=1 tie_recall@10=1 median_qps=7339.15 dists/query=391.58 checksum=5603879190
-metric=Cosine storage=Float32 build_ms=1148.48 payload_MiB=0.65 est_MiB=0.73
-  exact: median_qps=3548.56 dists/query=4000 checksum=7202690331
-  ef=64: id_recall@10=0.9835 tie_recall@10=1 median_qps=16219.81 dists/query=292.67 checksum=7199082135
-  ef=128: id_recall@10=0.9825 tie_recall@10=1 median_qps=8969.13 dists/query=415.62 checksum=7198238652
-  ef=256: id_recall@10=0.9855 tie_recall@10=1 median_qps=4218.45 dists/query=626.42 checksum=7198148874
+metric=L2 storage=Float32 build_ms=1221.45 payload_MiB=0.65 est_MiB=0.73
+  exact: median_qps=3803.48 dists/query=4000 checksum=6578855433
+  ef=64: id_recall@10=0.991 tie_recall@10=1 median_qps=14678.14 dists/query=277.18 checksum=6578774745
+  ef=128: id_recall@10=0.993 tie_recall@10=1 median_qps=8310.82 dists/query=389.27 checksum=6578854308
+  ef=256: id_recall@10=0.991 tie_recall@10=1 median_qps=4350.66 dists/query=563.03 checksum=6578739843
+metric=L2 storage=SQ8 build_ms=1336.27 payload_MiB=0.52 est_MiB=0.61
+  ef=64: id_recall@10=0.9535 tie_recall@10=0.9615 median_qps=15494.39 dists/query=276.46 checksum=6552973698
+  ef=128: id_recall@10=0.955 tie_recall@10=0.9615 median_qps=8242.12 dists/query=387.45 checksum=6552647946
+  ef=256: id_recall@10=0.953 tie_recall@10=0.9615 median_qps=4376.48 dists/query=561.55 checksum=6552870345
+metric=InnerProduct storage=Float32 build_ms=1054.22 payload_MiB=0.5 est_MiB=0.59
+  exact: median_qps=3604.69 dists/query=4000 checksum=5603879190
+  ef=64: id_recall@10=1 tie_recall@10=1 median_qps=15760.07 dists/query=254.13 checksum=5603879190
+  ef=128: id_recall@10=1 tie_recall@10=1 median_qps=10631.51 dists/query=299.35 checksum=5603879190
+  ef=256: id_recall@10=1 tie_recall@10=1 median_qps=7691.09 dists/query=391.58 checksum=5603879190
+metric=Cosine storage=Float32 build_ms=1108.16 payload_MiB=0.65 est_MiB=0.73
+  exact: median_qps=4230.4 dists/query=4000 checksum=7202690331
+  ef=64: id_recall@10=0.9835 tie_recall@10=1 median_qps=15378.23 dists/query=292.67 checksum=7199082135
+  ef=128: id_recall@10=0.9825 tie_recall@10=1 median_qps=8955.76 dists/query=415.62 checksum=7198238652
+  ef=256: id_recall@10=0.9855 tie_recall@10=1 median_qps=4579.22 dists/query=626.42 checksum=7198148874

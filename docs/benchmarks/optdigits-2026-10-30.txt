@@ -1,0 +1,27 @@
+source=https://archive.ics.uci.edu/ml/machine-learning-databases/optdigits/optdigits.tra sha256=e1b683cc211604fe8fd8c4417e6a69f31380e0c61d4af22e93cc21e9257ffedd
+source=https://archive.ics.uci.edu/ml/machine-learning-databases/optdigits/optdigits.tes sha256=6ebb3d2fee246a4e99363262ddf8a00a3c41bee6014c373ed9d9216ba7f651b8
+module=yiwnagmolu/moonhnsw version=0.12.4
+runtime=v24.21.0 platform=win32/x64 cpu=AMD Ryzen 7 5800H with Radeon Graphics
+Finished. moon: no work to do
+Artifacts:
+  yiwnagmolu/moonhnsw/benchmarks/real  js  E:\moonbit\moonhnsw\_build\js\release\build\benchmarks\real\real.js
+dataset=optdigits train=3823 queries=200 dim=64 k=10
+metric=L2 storage=Float32 build_ms=5630.98 payload_MiB=1.39 est_MiB=1.53
+  exact: median_qps=472.39 dists/query=3823 checksum=6487658616
+  ef=64: id_recall@10=0.997 tie_recall@10=1 median_qps=2596.21 dists/query=439.18 checksum=6519052776
+  ef=128: id_recall@10=0.996 tie_recall@10=1 median_qps=1827.08 dists/query=636.39 checksum=6516170322
+  ef=256: id_recall@10=0.997 tie_recall@10=1 median_qps=1049.47 dists/query=985.76 checksum=6520041639
+metric=L2 storage=SQ8 build_ms=4119.72 payload_MiB=0.69 est_MiB=0.78
+  ef=64: id_recall@10=0.993 tie_recall@10=0.9955 median_qps=4269.14 dists/query=439.01 checksum=6510517620
+  ef=128: id_recall@10=0.993 tie_recall@10=0.9955 median_qps=2637.98 dists/query=635.7 checksum=6510517620
+  ef=256: id_recall@10=0.993 tie_recall@10=0.9955 median_qps=1607.5 dists/query=984.61 checksum=6510517620
+metric=InnerProduct storage=Float32 build_ms=8320.45 payload_MiB=1.32 est_MiB=1.46
+  exact: median_qps=580.48 dists/query=3823 checksum=6562761375
+  ef=64: id_recall@10=0.998 tie_recall@10=1 median_qps=2712.97 dists/query=668.88 checksum=6556565262
+  ef=128: id_recall@10=0.9995 tie_recall@10=1 median_qps=1680.45 dists/query=981.33 checksum=6551453019
+  ef=256: id_recall@10=0.9975 tie_recall@10=1 median_qps=1048.49 dists/query=1459.77 checksum=6557832339
+metric=Cosine storage=Float32 build_ms=2625.82 payload_MiB=1.39 est_MiB=1.53
+  exact: median_qps=1237.06 dists/query=3823 checksum=6533821209
+  ef=64: id_recall@10=1 tie_recall@10=1 median_qps=6300.46 dists/query=425.86 checksum=6533821209
+  ef=128: id_recall@10=1 tie_recall@10=1 median_qps=3885.22 dists/query=615.66 checksum=6533821209
+  ef=256: id_recall@10=1 tie_recall@10=1 median_qps=2182.79 dists/query=956.65 checksum=6533821209
