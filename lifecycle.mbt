@@ -139,7 +139,6 @@ pub fn Hnsw::verify(self : Hnsw) -> Unit raise HnswError {
   if self.q_mins.length() != self.dim ||
     self.q_maxs.length() != self.dim ||
     self.q_scales.length() != self.dim ||
-    self.q_scratch.length() != self.dim ||
     self.f_scratch.length() != self.dim {
     raise CorruptData("scratch or bounds size mismatch")
   }

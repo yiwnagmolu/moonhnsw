@@ -70,7 +70,6 @@ fn Hnsw::exact_scan(
   if limit <= 0 || self.alive_count == 0 {
     return []
   }
-  self.q_scratch_source = self.q_scratch_reset
   let q : FixedArray[Float] = if self.normalize {
     let normalized : FixedArray[Float] = FixedArray::make(self.dim, 0.0)
     let _ = copy_normalized(query, 0, normalized, 0, self.dim, true)

@@ -5,7 +5,7 @@
 /// - `SQ8`: per-dimension scalar quantization to one byte. Bounds are
 ///   learned from the first 256 inserted vectors, after which the store is
 ///   frozen and later values clamp into range. Memory drops ~4x; recall
-///   drops slightly.
+///   depends on the observed per-dimension ranges.
 pub(all) enum Storage {
   Float32
   SQ8
@@ -82,8 +82,25 @@ fn Hnsw::freeze_and_quantize_all(
   while j < self.dim {
     let range = self.q_maxs.unsafe_get(j).to_double() -
       self.q_mins.unsafe_get(j).to_double()
-    let s = if range <= 1.0e-12 { 1.0 } else { range / 255.0 }
-    self.q_scales[j] = Float::from_double(s)
+    // A constant dimension needs no resolution. For every non-zero range,
+    // retain the finest positive f32 step that still covers the whole range.
+    // Rounding a very small step to zero would make quantization divide by 0.
+    let scale : Float = if range == 0.0 {
+      Float::from_double(1.0)
+    } else {
+      let ideal = range / 255.0
+      let rounded = Float::from_double(ideal)
+      if rounded == 0.0 {
+        Float::reinterpret_from_int(1) // smallest positive f32 subnormal
+      } else if rounded.to_double() < ideal {
+        Float::reinterpret_from_int(
+          rounded.reinterpret_as_uint().reinterpret_as_int() + 1,
+        )
+      } else {
+        rounded
+      }
+    }
+    self.q_scales[j] = scale
     j += 1
   }
   self.ensure_quant_capacity(self.count + 1)
@@ -110,15 +127,57 @@ fn Hnsw::quantize_into(
 ) -> Unit {
   let mut j = 0
   while j < self.dim {
-    let t = ((
-      src.unsafe_get(src_off + j).to_double() -
-      self.q_mins.unsafe_get(j).to_double()
-    ) /
-    self.q_scales.unsafe_get(j).to_double() +
-    0.5).to_int()
+    let lo = self.q_mins.unsafe_get(j).to_double()
+    let hi = self.q_maxs.unsafe_get(j).to_double()
+    let raw = src.unsafe_get(src_off + j).to_double()
+    // Clip later insertions to the *observed* bounds, including a dimension
+    // whose first 256 values were identical.
+    let bounded = if raw < lo { lo } else if raw > hi { hi } else { raw }
+    let t = ((bounded - lo) / self.q_scales.unsafe_get(j).to_double() + 0.5).to_int()
     let c = if t < 0 { 0 } else if t > 255 { 255 } else { t }
     dst[dst_off + j] = c.to_byte()
     j += 1
+  }
+}
+
+///|
+/// Decode one stored component. The upper clamp accounts for rounding the
+/// serialized f32 scale upward to keep every observed value representable.
+fn Hnsw::dequant_component(
+  self : Hnsw,
+  src : FixedArray[Byte],
+  off : Int32,
+  j : Int32,
+) -> Float {
+  let value = self.q_mins.unsafe_get(j).to_double() +
+    src.unsafe_get(off + j).to_double() *
+    self.q_scales.unsafe_get(j).to_double()
+  let hi = self.q_maxs.unsafe_get(j).to_double()
+  Float::from_double(if value > hi { hi } else { value })
+}
+
+///|
+/// Distance from an unquantized query to a stored SQ8 vector. Queries must
+/// keep their original values: clamping one to the index's training bounds
+/// could turn a distant query into a false exact radius match.
+fn Hnsw::dist_fq(self : Hnsw, q : FixedArray[Float], id : Int32) -> Double {
+  let off = id * self.dim
+  let mut sum = 0.0
+  for j in 0..<self.dim {
+    let stored = self.dequant_component(self.quants, off, j).to_double()
+    let query = q.unsafe_get(j).to_double()
+    match self.distance {
+      L2 => {
+        let delta = query - stored
+        sum += delta * delta
+      }
+      InnerProduct | Cosine => sum += query * stored
+    }
+  }
+  if self.distance is L2 {
+    sum
+  } else {
+    -sum
   }
 }
 
@@ -136,11 +195,9 @@ fn Hnsw::dist_qq(
       let mut s = 0.0
       let mut j = 0
       while j < self.dim {
-        let d = (
-            a.unsafe_get(a_off + j).to_double() -
-            self.quants.unsafe_get(b_off + j).to_double()
-          ) *
-          self.q_scales.unsafe_get(j).to_double()
+        let av = self.dequant_component(a, a_off, j).to_double()
+        let bv = self.dequant_component(self.quants, b_off, j).to_double()
+        let d = av - bv
         s += d * d
         j += 1
       }
@@ -150,12 +207,8 @@ fn Hnsw::dist_qq(
       let mut s = 0.0
       let mut j = 0
       while j < self.dim {
-        let av = a.unsafe_get(a_off + j).to_double() *
-          self.q_scales.unsafe_get(j).to_double() +
-          self.q_mins.unsafe_get(j).to_double()
-        let bv = self.quants.unsafe_get(b_off + j).to_double() *
-          self.q_scales.unsafe_get(j).to_double() +
-          self.q_mins.unsafe_get(j).to_double()
+        let av = self.dequant_component(a, a_off, j).to_double()
+        let bv = self.dequant_component(self.quants, b_off, j).to_double()
         s += av * bv
         j += 1
       }
@@ -174,11 +227,7 @@ fn Hnsw::dequantize_into(
   let off = id * self.dim
   let mut j = 0
   while j < self.dim {
-    dst[j] = Float::from_double(
-      self.quants.unsafe_get(off + j).to_double() *
-      self.q_scales.unsafe_get(j).to_double() +
-      self.q_mins.unsafe_get(j).to_double(),
-    )
+    dst[j] = self.dequant_component(self.quants, off, j)
     j += 1
   }
 }

@@ -63,9 +63,9 @@ fn validate_finite_vector(vector : FixedArray[Float]) -> Unit raise HnswError {
 /// For `InnerProduct` and `Cosine` the inner product is negated so that
 /// smaller always means more similar.
 ///
-/// Accumulation happens in `Float`, matching hnswlib: the input is f32, the
-/// result only feeds comparisons, and skipping the per-element f64 widening
-/// is measurably faster on every backend.
+/// Accumulation normally happens in `Float`, matching hnswlib. If finite
+/// inputs overflow that path, recompute in `Double` so graph ordering still
+/// has a finite distance.
 fn distance_between(
   metric : Distance,
   a : FixedArray[Float],
@@ -83,7 +83,20 @@ fn distance_between(
         s += d * d
         i += 1
       }
-      s.to_double()
+      let result = s.to_double()
+      if result > -@double.infinity && result < @double.infinity {
+        result
+      } else {
+        let mut recovered = 0.0
+        let mut j = 0
+        while j < dim {
+          let d = a.unsafe_get(a_off + j).to_double() -
+            b.unsafe_get(b_off + j).to_double()
+          recovered += d * d
+          j += 1
+        }
+        recovered
+      }
     }
     InnerProduct | Cosine => {
       let mut s : Float = 0.0
@@ -92,7 +105,19 @@ fn distance_between(
         s += a.unsafe_get(a_off + i) * b.unsafe_get(b_off + i)
         i += 1
       }
-      -s.to_double()
+      let result = s.to_double()
+      if result > -@double.infinity && result < @double.infinity {
+        -result
+      } else {
+        let mut recovered = 0.0
+        let mut j = 0
+        while j < dim {
+          recovered += a.unsafe_get(a_off + j).to_double() *
+            b.unsafe_get(b_off + j).to_double()
+          j += 1
+        }
+        -recovered
+      }
     }
   }
 }

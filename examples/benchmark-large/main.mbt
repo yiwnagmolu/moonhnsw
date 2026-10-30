@@ -187,9 +187,6 @@ fn run_all() -> Unit raise @moonhnsw.HnswError {
 }
 
 ///|
-fn main {
-  match (Ok(run_all()) catch { e => Err(e) }) {
-    Ok(_) => ()
-    Err(e) => println("error: \{e.message()}")
-  }
+fn main raise {
+  run_all()
 }

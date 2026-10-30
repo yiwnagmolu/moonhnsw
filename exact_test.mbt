@@ -44,7 +44,7 @@ test "exact scan handles selective filters and exhaustive radius" {
 }
 
 ///|
-test "exact scan shares metric semantics and handles infinite L2 distances" {
+test "exact scan shares metric semantics and handles large finite L2 distances" {
   let q : FixedArray[Float] = FixedArray::from_array([1.0, 0.0])
   for metric in [@moonhnsw.Distance::InnerProduct, @moonhnsw.Distance::Cosine] {
     let idx = @moonhnsw.Hnsw::new(2, metric)
@@ -59,6 +59,67 @@ test "exact scan shares metric semantics and handles infinite L2 distances" {
   let _ = huge.add(FixedArray::from_array([-1.0e20]))
   let zero : FixedArray[Float] = FixedArray::from_array([0.0])
   assert_eq(huge.search_exact(zero, 2).map(fn(x) { x.id }), [0, 1])
+  assert_true(huge.search_exact(zero, 1)[0].distance < @double.infinity)
+}
+
+///|
+test "finite f32 L2 overflow falls back to finite distances across search and load" {
+  let large = Float::from_double(3.0e38)
+  let query : FixedArray[Float] = FixedArray::from_array([-large])
+  let far : FixedArray[Float] = FixedArray::from_array([large])
+  let near : FixedArray[Float] = FixedArray::from_array([-large])
+  let difference = large.to_double() - (-large).to_double()
+  let expected = difference * difference
+  assert_true(expected < @double.infinity)
+  assert_eq(@moonhnsw.distance(@moonhnsw.Distance::L2, query, far), expected)
+
+  let idx = @moonhnsw.Hnsw::new(1, @moonhnsw.Distance::L2)
+  let _ = idx.add(far)
+  let _ = idx.add(near)
+  let exact = idx.search_exact(query, 2)
+  assert_eq(exact.map(fn(x) { x.id }), [1, 0])
+  assert_eq(exact[1].distance, expected)
+  let approximate = idx.search(query, 2, ef=16)
+  assert_eq(approximate.map(fn(x) { x.id }), [1, 0])
+  assert_eq(approximate[1].distance, expected)
+
+  let restored = @moonhnsw.Hnsw::load(idx.save())
+  assert_eq(restored.search_exact(query, 2), exact)
+  assert_eq(restored.search(query, 2, ef=16), approximate)
+}
+
+///|
+test "finite f32 inner products recover from infinity cancellation" {
+  let large = Float::from_double(1.0e20)
+  let query : FixedArray[Float] = FixedArray::from_array([large, large])
+  let cancel : FixedArray[Float] = FixedArray::from_array([large, -large])
+  let strong : FixedArray[Float] = FixedArray::from_array([large, large])
+  let product = large.to_double() * large.to_double()
+  let expected = -(product + product)
+  assert_eq(
+    @moonhnsw.distance(@moonhnsw.Distance::InnerProduct, query, cancel),
+    0.0,
+  )
+  assert_eq(
+    @moonhnsw.distance(@moonhnsw.Distance::InnerProduct, query, strong),
+    expected,
+  )
+
+  let idx = @moonhnsw.Hnsw::new(2, @moonhnsw.Distance::InnerProduct)
+  let _ = idx.add(cancel)
+  let _ = idx.add(strong)
+  let exact = idx.search_exact(query, 2)
+  assert_eq(exact.map(fn(x) { x.id }), [1, 0])
+  assert_eq(exact[0].distance, expected)
+  assert_eq(exact[1].distance, 0.0)
+  let approximate = idx.search(query, 2, ef=16)
+  assert_eq(approximate.map(fn(x) { x.id }), [1, 0])
+  assert_eq(approximate[0].distance, expected)
+  assert_eq(approximate[1].distance, 0.0)
+
+  let restored = @moonhnsw.Hnsw::load(idx.save())
+  assert_eq(restored.search_exact(query, 2), exact)
+  assert_eq(restored.search(query, 2, ef=16), approximate)
 }
 
 ///|

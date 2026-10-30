@@ -29,17 +29,13 @@ fn Hnsw::next_stamp(self : Hnsw) -> Int32 {
 }
 
 ///|
-/// Distance between a query slice and a stored vector. Under SQ8 the query
-/// is quantized into a reused scratch buffer once per search (detected by
-/// reference identity) and the distance runs over bytes.
+/// Distance between a query slice and a stored vector. SQ8 decodes the stored
+/// value while retaining the original query, including values beyond the
+/// training bounds. This keeps reported distances and radius checks honest.
 fn Hnsw::dist_query(self : Hnsw, q : FixedArray[Float], id : Int32) -> Double {
   self.dist_calls += 1L
   if self.q_active() {
-    if !physical_equal(q, self.q_scratch_source) {
-      self.quantize_into(q, 0, self.q_scratch, 0)
-      self.q_scratch_source = q
-    }
-    return self.dist_qq(self.q_scratch, 0, id * self.dim)
+    return self.dist_fq(q, id)
   }
   distance_between(self.distance, q, 0, self.vectors, id * self.dim, self.dim)
 }
@@ -243,7 +239,6 @@ pub fn Hnsw::search(
   if self.count == 0 || self.alive_count == 0 || k <= 0 {
     return []
   }
-  self.q_scratch_source = self.q_scratch_reset
   // L2/IP search the caller's array directly; only Cosine needs a
   // normalized copy.
   let q : FixedArray[Float] = if self.normalize {
@@ -289,7 +284,6 @@ pub fn Hnsw::search_filtered(
   if self.count == 0 || self.alive_count == 0 || k <= 0 {
     return []
   }
-  self.q_scratch_source = self.q_scratch_reset
   // L2/IP search the caller's array directly; only Cosine needs a
   // normalized copy.
   let q : FixedArray[Float] = if self.normalize {
@@ -451,7 +445,6 @@ pub fn Hnsw::search_radius(
   if self.count == 0 || self.alive_count == 0 {
     return []
   }
-  self.q_scratch_source = self.q_scratch_reset
   // L2/IP search the caller's array directly; only Cosine needs a
   // normalized copy.
   let q : FixedArray[Float] = if self.normalize {

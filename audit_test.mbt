@@ -90,7 +90,7 @@ test "public api: inserted vectors are isolated from caller mutation" {
 }
 
 ///|
-test "public api: top-k retains a finite vector with infinite L2 distance" {
+test "public api: top-k retains a finite vector after f32 L2 overflow" {
   let idx = @moonhnsw.Hnsw::new(1, @moonhnsw.Distance::L2)
   let far : FixedArray[Float] = FixedArray::from_array([1.0e20])
   let query : FixedArray[Float] = FixedArray::from_array([0.0])
@@ -98,10 +98,11 @@ test "public api: top-k retains a finite vector with infinite L2 distance" {
   let hits = idx.search(query, 1)
   assert_eq(hits.length(), 1)
   assert_eq(hits[0].id, 0)
-  assert_true(hits[0].distance > 1.0e308)
+  let expected = far[0].to_double() * far[0].to_double()
+  assert_eq(hits[0].distance, expected)
   assert_eq(idx.search_filtered(query, 1, filter=fn(_) { true }), hits)
   assert_eq(idx.search_mmr(query, 1), hits)
-  assert_eq(idx.search_radius(query, 1.0e308).length(), 0)
+  assert_eq(idx.search_radius(query, expected / 2.0).length(), 0)
   assert_eq(idx.search_radius(query, hits[0].distance), hits)
 }
 
@@ -155,4 +156,85 @@ test "public api: SQ8 upsert, compact, and persistence keep labels searchable" {
     loaded.search_radius_exact(q, 1.0, filter=fn(id) { id == mapped_id }),
     hits,
   )
+}
+
+///|
+test "public api: SQ8 resolves tiny and subnormal nonzero ranges" {
+  let idx = @moonhnsw.Hnsw::new(
+    1,
+    @moonhnsw.Distance::L2,
+    params=@moonhnsw.HnswParams::new(storage=@moonhnsw.Storage::SQ8),
+  )
+  for i in 0..<256 {
+    let value = Float::from_double(i.to_double() * 1.0e-13 / 255.0)
+    let _ = idx.add(FixedArray::from_array([value]))
+  }
+  let high = idx.get_vector(255)[0]
+  assert_true(high > 0.0)
+  let q : FixedArray[Float] = FixedArray::from_array([
+    Float::from_double(1.0e-13),
+  ])
+  assert_eq(idx.search_exact(q, 1)[0].id, 255)
+  assert_eq(idx.search_radius_exact(q, 0.0).map(fn(x) { x.id }), [255])
+  let loaded = @moonhnsw.Hnsw::load(idx.save())
+  assert_eq(loaded.search_exact(q, 1), idx.search_exact(q, 1))
+
+  let subnormal = Float::reinterpret_from_int(1)
+  let tiny = @moonhnsw.Hnsw::new(
+    1,
+    @moonhnsw.Distance::L2,
+    params=@moonhnsw.HnswParams::new(storage=@moonhnsw.Storage::SQ8),
+  )
+  for _ in 0..<255 {
+    let _ = tiny.add(FixedArray::from_array([0.0]))
+  }
+  let _ = tiny.add(FixedArray::from_array([subnormal]))
+  assert_eq(tiny.get_vector(255)[0], subnormal)
+  assert_eq(
+    tiny
+    .search_radius_exact(FixedArray::from_array([subnormal]), 0.0)
+    .map(fn(x) { x.id }),
+    [255],
+  )
+}
+
+///|
+test "public api: SQ8 scores out-of-bounds queries without clipping them" {
+  let idx = @moonhnsw.Hnsw::new(
+    1,
+    @moonhnsw.Distance::L2,
+    params=@moonhnsw.HnswParams::new(storage=@moonhnsw.Storage::SQ8),
+  )
+  for i in 0..<256 {
+    let _ = idx.add(
+      FixedArray::from_array([Float::from_double(i.to_double() / 255.0)]),
+    )
+  }
+  let q : FixedArray[Float] = FixedArray::from_array([100.0])
+  let exact = idx.search_exact(q, 1)
+  assert_eq(exact[0].id, 255)
+  assert_eq(exact[0].distance, 9801.0)
+  assert_eq(idx.search_radius_exact(q, 0.0).length(), 0)
+  assert_eq(idx.search_radius(q, 0.0).length(), 0)
+  for hit in idx.search(q, 10, ef=64) {
+    let value = idx.get_vector(hit.id)[0].to_double()
+    assert_eq(hit.distance, (100.0 - value) * (100.0 - value))
+  }
+  let reloaded = @moonhnsw.Hnsw::load(idx.save())
+  assert_eq(reloaded.search_exact(q, 1), exact)
+
+  // A constant training dimension must also clip later insertions to its
+  // one learned value, rather than treating the fallback scale as a range.
+  let constant = @moonhnsw.Hnsw::new(
+    1,
+    @moonhnsw.Distance::L2,
+    params=@moonhnsw.HnswParams::new(storage=@moonhnsw.Storage::SQ8),
+  )
+  for _ in 0..<256 {
+    let _ = constant.add(FixedArray::from_array([0.5]))
+  }
+  let later = constant.add(FixedArray::from_array([100.0]))
+  assert_eq(constant.get_vector(later)[0], 0.5)
+  assert_eq(constant.search_exact(q, 1)[0].distance, 9900.25)
+  assert_eq(constant.search_radius_exact(q, 0.0).length(), 0)
 }

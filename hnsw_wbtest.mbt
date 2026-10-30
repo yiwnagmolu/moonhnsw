@@ -1212,6 +1212,58 @@ test "SQ8 roundtrip, dequantization and clamping" {
 }
 
 ///|
+test "SQ8 learns the full finite f32 range without overflowing decoded values" {
+  let largest = Float::reinterpret_from_int(0x7F7FFFFF)
+  for value in [largest, -largest] {
+    let idx = Hnsw::new(1, L2, params=HnswParams::new(storage=SQ8))
+    for _ in 0..<256 {
+      let _ = idx.add(FixedArray::from_array([value]))
+    }
+    assert_eq(idx.q_mins[0], value)
+    assert_eq(idx.q_maxs[0], value)
+    assert_eq(idx.get_vector(255)[0], value)
+    let later = idx.add(FixedArray::from_array([0.0]))
+    assert_eq(idx.get_vector(later)[0], value)
+    let restored = Hnsw::load(idx.save())
+    assert_eq(restored.get_vector(later)[0], value)
+    restored.verify()
+  }
+  let mixed = Hnsw::new(1, L2, params=HnswParams::new(storage=SQ8))
+  for i in 0..<256 {
+    let value = if i % 2 == 0 { largest } else { -largest }
+    let _ = mixed.add(FixedArray::from_array([value]))
+  }
+  assert_eq(mixed.get_vector(0)[0], largest)
+  assert_eq(mixed.get_vector(1)[0], -largest)
+  let restored = Hnsw::load(mixed.save())
+  assert_eq(restored.get_vector(0)[0], largest)
+  assert_eq(restored.get_vector(1)[0], -largest)
+}
+
+///|
+test "legacy pre-freeze SQ8 bounds are repaired when loading" {
+  let largest = Float::reinterpret_from_int(0x7F7FFFFF)
+  for value in [largest, -largest] {
+    let old = Hnsw::new(1, L2, params=HnswParams::new(storage=SQ8))
+    let _ = old.add(FixedArray::from_array([value]))
+    if value > 0.0 {
+      old.q_mins[0] = 3.0e38
+    } else {
+      old.q_maxs[0] = -3.0e38
+    }
+    let loaded = Hnsw::load(old.save())
+    assert_eq(loaded.q_mins[0], value)
+    assert_eq(loaded.q_maxs[0], value)
+    for _ in 0..<255 {
+      let _ = loaded.add(FixedArray::from_array([value]))
+    }
+    assert_true(loaded.q_frozen)
+    assert_eq(loaded.get_vector(255)[0], value)
+    loaded.verify()
+  }
+}
+
+///|
 test "MMR search trades relevance for diversity" {
   let dim = 8
   // Six near-copies of the query plus plenty of spread-out filler.

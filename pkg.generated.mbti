@@ -86,9 +86,6 @@ pub struct Hnsw {
   q_maxs : FixedArray[Float]
   q_scales : FixedArray[Float]
   mut q_frozen : Bool
-  q_scratch : FixedArray[Byte]
-  mut q_scratch_source : FixedArray[Float]
-  q_scratch_reset : FixedArray[Float]
   f_scratch : FixedArray[Float]
   cand_items : Array[(Double, Int32)]
   result_items : Array[(Double, Int32)]

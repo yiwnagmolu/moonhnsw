@@ -70,7 +70,6 @@ fn Hnsw::insert(
   }
   validate_finite_vector(vector)
   let id = self.count
-  self.q_scratch_source = self.q_scratch_reset
   let off = id * self.dim
   // L2 and inner product can read the caller's f32 vector directly. Cosine
   // needs a normalized copy that remains stable throughout graph insertion.
@@ -95,6 +94,16 @@ fn Hnsw::insert(
     self.ensure_quant_capacity(id + 1)
     self.quantize_into(q, 0, self.quants, off)
   }
+  // Build links from the values that searches will actually score. The 256th
+  // insertion freezes SQ8 before linking, as do all subsequent insertions.
+  let graph_q : FixedArray[Float] = if self.q_active() {
+    // For Cosine, `q` already used this scratch during quantization; it is
+    // safe to overwrite it now that the bytes have been stored.
+    self.dequantize_into(id, self.f_scratch)
+    self.f_scratch
+  } else {
+    q
+  }
   let level = self.random_level()
   let node_links : Array[Array[Int32]] = []
   for _ in 0..<=level {
@@ -112,14 +121,13 @@ fn Hnsw::insert(
     self.max_level = level
     return id
   }
-  // `q` holds exactly the f32 values stored at this id (or the full-precision
-  // query for frozen SQ8), so graph construction needs no second copy.
+  // The graph query is the stored vector (dequantized when SQ8 has frozen).
   // Greedy descent through layers above the node's level.
   let mut ep = self.entry
-  let mut ep_dist = self.dist_query(q, ep)
+  let mut ep_dist = self.dist_query(graph_q, ep)
   let mut cur = self.max_level
   while cur > level {
-    let r = self.greedy_descent(q, ep, ep_dist, cur)
+    let r = self.greedy_descent(graph_q, ep, ep_dist, cur)
     ep = r.0
     ep_dist = r.1
     cur -= 1
@@ -130,7 +138,7 @@ fn Hnsw::insert(
   let mut layer = top
   while layer >= 0 {
     let cands = self.search_layer(
-      q,
+      graph_q,
       eps,
       self.params.ef_construction,
       layer,

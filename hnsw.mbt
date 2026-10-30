@@ -126,7 +126,7 @@ pub struct Hnsw {
   params : HnswParams
   /// True when the metric pre-normalizes vectors (Cosine).
   normalize : Bool
-  /// 1 / ln(m) 闂?level assignment factor.
+  /// 1 / ln(m), the level assignment factor.
   level_mult : Double
   /// Id of the entry point, -1 when the index is empty.
   mut entry : Int32
@@ -160,13 +160,6 @@ pub struct Hnsw {
   /// True once the quantization bounds are frozen and vectors are stored as
   /// one byte per dimension.
   mut q_frozen : Bool
-  /// Reusable scratch for quantizing query vectors during search.
-  q_scratch : FixedArray[Byte]
-  /// The query currently held in `q_scratch`; compared by reference so one
-  /// search quantizes its query once instead of per visited neighbor.
-  mut q_scratch_source : FixedArray[Float]
-  /// Sentinel used to invalidate `q_scratch_source` between operations.
-  q_scratch_reset : FixedArray[Float]
   /// Reusable scratch for the normalized copy of an inserted vector.
   f_scratch : FixedArray[Float]
   /// Backing stores of the traversal heaps, drained after every use and
@@ -229,13 +222,10 @@ pub fn Hnsw::new(
     f_capacity: 0,
     quants: FixedArray::make(0, 0),
     q_capacity: 0,
-    q_mins: FixedArray::make(dim, 3.0e38),
-    q_maxs: FixedArray::make(dim, -3.0e38),
+    q_mins: FixedArray::make(dim, Float::reinterpret_from_int(0x7F7FFFFF)),
+    q_maxs: FixedArray::make(dim, -Float::reinterpret_from_int(0x7F7FFFFF)),
     q_scales: FixedArray::make(dim, 1.0),
     q_frozen: false,
-    q_scratch: FixedArray::make(dim, 0),
-    q_scratch_source: FixedArray::make(0, 0.0),
-    q_scratch_reset: FixedArray::make(0, 0.0),
     f_scratch: FixedArray::make(dim, 0.0),
     cand_items: [],
     result_items: [],
@@ -276,7 +266,7 @@ pub fn Hnsw::contains(self : Hnsw, id : Int32) -> Bool {
 }
 
 ///|
-/// Returns the label stored for `id` 闂?the id itself by default, or the
+/// Returns the label stored for `id`: the id itself by default, or the
 /// value passed to `add_labeled`. Raises `InvalidId` for unknown or deleted
 /// ids.
 pub fn Hnsw::label_of(self : Hnsw, id : Int32) -> UInt64 raise HnswError {

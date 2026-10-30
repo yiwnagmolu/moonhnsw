@@ -51,7 +51,7 @@ pub extend EfCalibration with ToJson::{to_json}
 /// measured recall is specific to those queries and this index state. `efs`
 /// must be nonempty, strictly increasing, and each value at least `k`.
 /// Ground truth is an exact top-k scan of non-deleted vectors using the same
-/// metric and, for frozen SQ8, the same byte-distance computation as search.
+/// metric and, for frozen SQ8, the same stored-vector distance as search.
 /// Any result tied at the exact kth distance counts as a correct neighbor.
 /// The stored `distance_computations()` after this call is the total work of
 /// the approximate trial searches, excluding ground-truth scans.

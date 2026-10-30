@@ -464,8 +464,14 @@ pub fn Hnsw::load(data : FixedArray[Byte]) -> Hnsw raise HnswError {
     Float32
   }
   let mut q_frozen = false
-  let q_mins : FixedArray[Float] = FixedArray::make(dim, 3.0e38)
-  let q_maxs : FixedArray[Float] = FixedArray::make(dim, -3.0e38)
+  let q_mins : FixedArray[Float] = FixedArray::make(
+    dim,
+    Float::reinterpret_from_int(0x7F7FFFFF),
+  )
+  let q_maxs : FixedArray[Float] = FixedArray::make(
+    dim,
+    -Float::reinterpret_from_int(0x7F7FFFFF),
+  )
   let q_scales : FixedArray[Float] = FixedArray::make(dim, 1.0)
   if version >= 5 && storage is SQ8 {
     let frozen_flag = r.byte()
@@ -573,9 +579,6 @@ pub fn Hnsw::load(data : FixedArray[Byte]) -> Hnsw raise HnswError {
     q_maxs,
     q_scales,
     q_frozen,
-    q_scratch: FixedArray::make(dim, 0),
-    q_scratch_source: FixedArray::make(0, 0.0),
-    q_scratch_reset: FixedArray::make(0, 0.0),
     f_scratch: FixedArray::make(dim, 0.0),
     cand_items: [],
     result_items: [],
@@ -584,6 +587,21 @@ pub fn Hnsw::load(data : FixedArray[Byte]) -> Hnsw raise HnswError {
     stamp: 0,
     rng_state,
     dist_calls: 0L,
+  }
+  if storage is SQ8 && !q_frozen {
+    // Keep rejecting malformed saved bounds even though they are replaced.
+    idx.verify()
+    // Earlier payloads could persist ±3e38 sentinels even when finite f32
+    // components lay beyond them. Rebuild the running bounds from the stored
+    // pre-freeze floats so continued insertion learns the true range.
+    let largest = Float::reinterpret_from_int(0x7F7FFFFF)
+    for j in 0..<dim {
+      idx.q_mins[j] = largest
+      idx.q_maxs[j] = -largest
+    }
+    for id in 0..<count {
+      idx.observe_bounds(idx.vectors, id * dim)
+    }
   }
   idx.verify()
   idx
