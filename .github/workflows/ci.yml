@@ -14,13 +14,15 @@ permissions:
 jobs:
   test:
     name: Verify (${{ matrix.target }})
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
       matrix:
         target: [wasm, wasm-gc, js, native]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Install MoonBit toolchain
         shell: bash

@@ -9,7 +9,8 @@ the repository; the binary serialization format stays backward compatible
 - Migrate trait derivations to `#derive(...)` for the current MoonBit compiler
   so formatting and warning checks pass again.
 - Record `moon version --all` in CI and check, build, and test wasm, wasm-gc,
-  JS, and native on Linux. Add weekly and manual CI triggers.
+  JS, and native on Ubuntu 24.04. Update the checkout action and add weekly
+  and manual CI triggers.
 - Document the verified compiler baseline, Windows native build requirements,
   and how to reproduce the installed package example.
 
