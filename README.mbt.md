@@ -1,12 +1,12 @@
 # moonhnsw
 
 [![CI](https://github.com/yiwnagmolu/moonhnsw/actions/workflows/ci.yml/badge.svg)](https://github.com/yiwnagmolu/moonhnsw/actions/workflows/ci.yml)
-[![Version](https://img.shields.io/badge/version-0.12.4-blue)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.12.5-blue)](CHANGELOG.md)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
 Pure MoonBit approximate nearest-neighbor search: a local vector index built on the HNSW graph (Malkov & Yashunin, 2016) — the same algorithm inside [hnswlib](https://github.com/nmslib/hnswlib), [usearch](https://github.com/unum-cloud/usearch) and Qdrant.
 
-Feed in `f32` vectors, get back the approximate top-k nearest neighbors. No FFI, no system dependencies — the whole index is MoonBit, so it runs on **native, wasm and js** backends alike.
+Feed in `f32` vectors, get back the approximate top-k nearest neighbors. The index is written in MoonBit and runs on **native, wasm, wasm-gc and js**. See [Development](#development) for Windows native build requirements.
 
 ## Features
 
@@ -30,10 +30,10 @@ Feed in `f32` vectors, get back the approximate top-k nearest neighbors. No FFI,
 
 ## Quick start
 
-The module is available on [Mooncakes](https://mooncakes.io/docs/yiwnagmolu/moonhnsw/). To start from an empty project, run `moon new moonhnsw-demo` and `cd moonhnsw-demo`. Then add the published version:
+Use `moonc` 0.10.20 or newer. To start from an empty project, run `moon new moonhnsw-demo` and `cd moonhnsw-demo`. Then install the published version from [Mooncakes](https://mooncakes.io/docs/yiwnagmolu/moonhnsw/).
 
 ```sh
-moon add yiwnagmolu/moonhnsw@0.12.4
+moon add yiwnagmolu/moonhnsw@0.12.5
 ```
 
 In the `moon.pkg` of the package using the library (for example, `cmd/main/moon.pkg`), add:
@@ -254,15 +254,20 @@ layer 0   a─b─c─d─e─f─g─h─i─...        (all nodes, beam search
 
 ## Development
 
+Use `moonc` 0.10.20 or newer. CI uses the current official toolchain and checks,
+builds, and tests `wasm`, `wasm-gc`, `js` and `native` on Linux.
+
 ```
-moon test                 # run the test suite
+moon version --all
+moon test --target wasm
 moon test --target wasm-gc
+moon test --target js
 moon check --target wasm-gc --deny-warn
 moon info && moon fmt     # refresh generated interfaces, format
 moon run --target wasm-gc examples/benchmark
 ```
 
-> On Windows the native backend additionally requires MSVC Build Tools (`cl.exe` or `clang-cl`); wasm-gc and js targets work out of the box.
+> Windows native builds require an MSVC-compatible compiler (`cl.exe` or `clang-cl.exe`) and the Windows SDK. Use `--target wasm-gc` for the quick start without the native toolchain.
 
 ## References
 

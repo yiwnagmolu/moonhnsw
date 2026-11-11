@@ -1,17 +1,17 @@
 # moonhnsw
 
 [![CI](https://github.com/yiwnagmolu/moonhnsw/actions/workflows/ci.yml/badge.svg)](https://github.com/yiwnagmolu/moonhnsw/actions/workflows/ci.yml)
-[![Mooncakes](https://img.shields.io/badge/Mooncakes-0.12.4-blue)](https://mooncakes.io/docs/yiwnagmolu/moonhnsw/)
+[![Mooncakes](https://img.shields.io/badge/Mooncakes-0.12.5-blue)](https://mooncakes.io/docs/yiwnagmolu/moonhnsw/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
-**moonhnsw** is a MoonBit library for approximate nearest-neighbor search over `f32` vectors. It implements an HNSW graph with L2, inner-product and cosine distances. The core index runs on native, wasm and JS targets. See the [full API and usage guide](README.mbt.md) for parameters, distance conventions, limitations and examples.
+**moonhnsw** is a MoonBit library for approximate nearest-neighbor search over `f32` vectors. It implements an HNSW graph with L2, inner-product and cosine distances. The core index runs on native, wasm, wasm-gc and JS targets. See the [full API and usage guide](README.mbt.md) for parameters, distance conventions, limitations and examples.
 
 ## Install and run
 
-From an existing MoonBit project, install the published version:
+Use [MoonBit](https://www.moonbitlang.com/download/) with `moonc` 0.10.20 or newer. Run `moon version --all` to check your installation. Install the published version from your MoonBit project.
 
 ```sh
-moon add yiwnagmolu/moonhnsw@0.12.4
+moon add yiwnagmolu/moonhnsw@0.12.5
 ```
 
 If you need a new project first, run `moon new moonhnsw-demo` and `cd moonhnsw-demo`. In the package that will use the index, put this in `cmd/main/moon.pkg` (or adapt the path to your package):
@@ -46,15 +46,17 @@ The library supports incremental insertion, approximate and exact search, filter
 The repository includes [tests](api_test.mbt) for core paths and edge cases, a [runnable benchmark example](examples/benchmark/main.mbt), a [real-data benchmark report](docs/real-benchmarks.md) with UCI source hashes and raw logs, and a [nine-point acceptance audit](docs/acceptance-audit.md). To verify locally, run:
 
 ```sh
+moon version --all
 moon fmt --check
 moon check --target wasm-gc --deny-warn
+moon test --target wasm
 moon test --target wasm-gc
 moon test --target js
 moon build --target wasm
 moon run --target wasm-gc examples/benchmark
 ```
 
-The [CI workflow](.github/workflows/ci.yml) also runs native tests, checks the minimum `moonc` version (`0.10.16`), and builds documentation.
+The [CI workflow](.github/workflows/ci.yml) checks, builds, and tests all four targets on Linux on pushes to `main`, pull requests, and a weekly schedule. It records the installed toolchain and runs the benchmark smoke example. On Windows, native builds require an MSVC-compatible compiler and the Windows SDK. The `wasm-gc` quick start works without that native toolchain.
 
 ## License and sources
 

@@ -1,21 +1,36 @@
-# 申报书对照与验收自查（2026-10-30）
+# 申报书对照与验收自查（更新于 2026-11-12）
 
 本表同时对照工作区的 `moonhnsw-申报书.md` 和
 [2026 MoonBit 黑客松十月赛程公布的验收标准](https://moonbitlang.github.io/Hackathon2026/)。
 官方页面列出六项验收标准；最终执行口径仍以正式章程和官方通知为准。
 数字是可复现的项目证据，不构成任意环境下的性能承诺。
 
+## 2026-11-12 工具链兼容性维护
+
+- Windows x64 上的 `moon version --all` 记录为 `moon` 和 `moonrun`
+  `0.1.20261104 (940aa18)`，`moonc v0.10.20+65efd5b93`。
+  三个二进制文件的 SHA-256 与官方最新 Windows 清单一致。
+- v0.12.5 使用 `#derive(...)` 语法，恢复 `moon fmt --check` 和
+  `moon check --deny-warn`。文档明确本版以 `moonc 0.10.20` 为支持基线。
+- Windows 上对 `wasm`、`wasm-gc` 和 `js` 分别检查、构建、测试，另运行
+  `examples/benchmark`。Windows native 需要 MSVC 兼容编译器和 Windows SDK，
+  本机验证到类型检查，native 构建和测试由 Linux CI 完成。
+- [GitHub Actions](https://github.com/yiwnagmolu/moonhnsw/actions/workflows/ci.yml)
+  在推送到 `main`、PR、每周定时和手动触发时，用官方当前工具链检查、构建并测试四个目标。
+  每个任务记录工具链版本，native 额外运行 release 测试。版本对应的运行记录见
+  [v0.12.5 发布页](https://github.com/yiwnagmolu/moonhnsw/releases/tag/v0.12.5)。
+
 ## 最终验收指南九项（参赛者提供）
 
 | 要求 | 可核查证据 | 自查 |
 | --- | --- | --- |
-| 1. MoonBit 为主要语言，`moonc >= 0.10.16` | 核心库、功能测试及基准计算均为 MoonBit；本机 `moonc -v` 为 `v0.10.17`，CI 有最低版本校验。 | 满足；Node 脚本仅下载数据并启动 JS 基准。 |
+| 1. MoonBit 为主要语言，`moonc >= 0.10.16` | 核心库、功能测试及基准计算均为 MoonBit。v0.12.5 的支持基线为 `moonc 0.10.20`，CI 记录并校验版本。 | 满足；Node 脚本仅下载数据并启动 JS 基准。 |
 | 2. GitHub 公开，提交清晰 | [公开仓库](https://github.com/yiwnagmolu/moonhnsw)、`git log --oneline --decorate`、版本标签和 `CHANGELOG.md`。 | 满足；功能、测试、基准、文档及发布记录可追溯。 |
 | 3. 结构清晰，核心功能完整 | `hnsw.mbt`、`insert.mbt`、`search.mbt`、`distance.mbt`、`serial.mbt` 等按职责拆分；下方逐项映射申报功能。 | 核心 HNSW 构建、检索与持久化可运行；近似搜索及单线程边界在 README 明示。 |
 | 4. README 目标、安装、用法和示例可复现 | GitHub 首页 `README.md` 与 Mooncakes 使用的 `README.mbt.md` 均含项目目标、固定版本安装、包级 `moon.pkg` 导入、完整 `main` 和运行命令；发布后在全新消费者项目复验。 | 文档齐备；以发布后的安装复验为准。 |
-| 5. CI 覆盖检查、构建、测试 | `.github/workflows/ci.yml` 执行 `moon fmt --check`、`moon check --target wasm-gc --deny-warn`、三个后端的测试、wasm 构建、文档和示例。 | 满足；以对应提交的 GitHub Actions 结果为准。 |
+| 5. CI 覆盖检查、构建、测试 | `.github/workflows/ci.yml` 对 wasm、wasm-gc、js、native 分别执行无警告检查、构建和测试，并检查格式、生成文档和运行示例。 | 以对应提交的 GitHub Actions 结果为准。 |
 | 6. 可运行示例 | `examples/benchmark` 由 CI 执行；README 另有最小消费者示例。 | 满足。 |
-| 7. 核心路径测试 | 89 项黑盒/白盒测试覆盖三种距离、构建检索、删除压实、量化、持久化、过滤和异常输入；本机 wasm-gc、JS 各 89/89，CI 执行 native。 | 已覆盖声明的核心路径；测试无法证明零缺陷。 |
+| 7. 核心路径测试 | 89 项黑盒/白盒测试覆盖三种距离、构建检索、删除压实、量化、持久化、过滤和异常输入。本机 wasm、wasm-gc、JS 各 89/89，CI 执行 native。 | 已覆盖声明的核心路径；测试无法证明零缺陷。 |
 | 8. Mooncakes 发布 | `moon view yiwnagmolu/moonhnsw --json` 可查询公开包和最新版本；README 有安装命令。 | 满足。 |
 | 9. OSI 许可证及参考来源合规 | `LICENSE` 和 `moon.mod` 均为 [OSI 认可的 MIT](https://opensource.org/license/mit)；README 列出 HNSW 论文和参数约定的参考项目，说明为独立实现；UCI 数据在基准报告中署名和注明 CC BY 4.0。 | 仓库未包含参照库代码或原始数据；历史创作过程仍须由参赛者说明。 |
 
@@ -52,7 +67,7 @@
 
 ## 提交、许可证与来源
 
-- 截至 v0.12.4 共 82 个提交，历史按功能、基准、文档与版本提交分开；可用 `git log --oneline --decorate` 和 `git tag --list` 核对。本轮核心修复提交为 `695aced`，文档、基准与发布信息在下一提交。v0.12.0 的功能与真实基准提交分别是 `8551872`、`e479027`；v0.12.2 的验收自查和基准提交是 `28a47c3`。
+- 截至 v0.12.4 共 82 个提交，历史按功能、基准、文档与版本提交分开；可用 `git log --oneline --decorate` 和 `git tag --list` 核对。v0.12.4 的核心修复在 `695aced`，文档、基准与发布信息在 `1a13fac`。v0.12.0 的功能与真实基准提交分别是 `8551872`、`e479027`；v0.12.2 的验收自查和基准提交是 `28a47c3`。
 - `LICENSE` 是 MIT 许可证，`moon.mod` 的 `license` 为 `MIT`。Git 提交作者为 `yiwnagmolu`；版权行标明维护者和贡献者。MIT 文本要求分发副本保留版权与许可声明。
 - 核心包只导入 `moonbitlang/core` 的 `math`、`debug`、`double`；基准启动器只使用 Node.js 内建模块。仓库不包含第三方实现代码或 UCI 原始数据。申报书声明 HNSW 代码为独立实现；仓库审查能确认无 vendored 参照实现，但无法单凭仓库证明所有历史创作过程。
 - 四份 UCI 数据集页面均标为 CC BY 4.0；基准报告给出作者、DOI、源链接和使用方式。运行器按固定 SHA-256 校验下载内容，数据缓存在仓库之外。
@@ -63,9 +78,10 @@
 ```sh
 moon info
 moon fmt --check
-moonc -v
+moon version --all
 moon check --target wasm-gc --deny-warn
 moon test --target wasm-gc
+moon test --target wasm
 moon test --target js
 moon build --target wasm
 moon doc

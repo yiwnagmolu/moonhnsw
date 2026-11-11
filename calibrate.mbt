@@ -1,5 +1,6 @@
 ///|
 /// One measured beam width from `Hnsw::calibrate_ef`.
+#derive(Eq, @debug.Debug, ToJson)
 pub struct EfTrial {
   /// Beam width tested (must be at least k).
   ef : Int32
@@ -10,7 +11,7 @@ pub struct EfTrial {
   /// Mean distance computations per approximate query, excluding the exact
   /// ground-truth scan.
   avg_distance_computations : Double
-} derive(Eq, @debug.Debug, ToJson)
+}
 
 ///|
 pub extend EfTrial with Eq::{not_equal, equal}
@@ -23,6 +24,7 @@ pub extend EfTrial with ToJson::{to_json}
 
 ///|
 /// Empirical recall/cost curve for a set of query samples.
+#derive(Eq, @debug.Debug, ToJson)
 pub struct EfCalibration {
   /// Smallest tested ef that met the target, or the largest tested ef when
   /// no trial met it.
@@ -31,7 +33,7 @@ pub struct EfCalibration {
   met_target : Bool
   /// Trial results in ascending ef order.
   trials : Array[EfTrial]
-} derive(Eq, @debug.Debug, ToJson)
+}
 
 ///|
 pub extend EfCalibration with Eq::{not_equal, equal}

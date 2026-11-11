@@ -6,10 +6,11 @@
 ///   learned from the first 256 inserted vectors, after which the store is
 ///   frozen and later values clamp into range. Memory drops ~4x; recall
 ///   depends on the observed per-dimension ranges.
+#derive(Eq)
 pub(all) enum Storage {
   Float32
   SQ8
-} derive(Eq)
+}
 
 ///|
 pub extend Storage with Eq::{not_equal, equal}

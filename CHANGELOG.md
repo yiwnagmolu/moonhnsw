@@ -4,6 +4,15 @@ All notable changes to moonhnsw are documented here. Releases are tagged in
 the repository; the binary serialization format stays backward compatible
 (newer loaders accept older payloads).
 
+## 0.12.5 (2026-11-12)
+
+- Migrate trait derivations to `#derive(...)` for the current MoonBit compiler
+  so formatting and warning checks pass again.
+- Record `moon version --all` in CI and check, build, and test wasm, wasm-gc,
+  JS, and native on Linux. Add weekly and manual CI triggers.
+- Document the verified compiler baseline, Windows native build requirements,
+  and how to reproduce the installed package example.
+
 ## 0.12.4 — 2026-10-30
 
 ### Fixed

@@ -7,11 +7,12 @@
 /// - `InnerProduct`: negated inner product (smaller = more similar).
 /// - `Cosine`: negated inner product of L2-normalized vectors; vectors are
 ///   normalized once on insertion and queries are normalized per search.
+#derive(Eq)
 pub(all) enum Distance {
   L2
   InnerProduct
   Cosine
-} derive(Eq)
+}
 
 ///|
 pub extend Distance with Eq::{not_equal, equal}
@@ -83,10 +84,11 @@ pub fn HnswError::message(self : HnswError) -> String {
 ///|
 /// One search result: the vector id and its distance to the query under the
 /// index metric (see `Distance` for sign conventions).
+#derive(Eq, @debug.Debug, ToJson)
 pub struct Neighbor {
   id : Int32
   distance : Double
-} derive(Eq, @debug.Debug, ToJson)
+}
 
 ///|
 pub extend Neighbor with Eq::{not_equal, equal}
@@ -299,6 +301,7 @@ pub fn Hnsw::get_vector(
 
 ///|
 /// Diagnostic snapshot of the index graph.
+#derive(Eq, @debug.Debug, ToJson)
 pub struct HnswStats {
   /// Total insertions, including deleted tombstones.
   count : Int32
@@ -314,7 +317,7 @@ pub struct HnswStats {
   /// Rough estimate of the heap memory held by the index, in bytes: vector
   /// storage, edge ids, per-list overhead and traversal markers.
   estimated_bytes : Int64
-} derive(Eq, @debug.Debug, ToJson)
+}
 
 ///|
 pub extend HnswStats with Eq::{not_equal, equal}

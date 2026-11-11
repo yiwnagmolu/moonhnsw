@@ -3,6 +3,7 @@ package "yiwnagmolu/moonhnsw"
 
 import {
   "moonbitlang/core/debug",
+  "moonbitlang/core/json",
 }
 
 // Values
@@ -21,15 +22,16 @@ pub fn HnswError::to_string(Self) -> String
 pub impl Show for HnswError
 
 // Types and methods
+#derive(Eq, @debug.Debug, @json.ToJson)
 pub struct AdaptiveSearchResult {
   neighbors : Array[Neighbor]
   final_ef : Int32
   rounds : Int32
   distance_computations : Int64
-} derive(Eq, ToJson, @debug.Debug)
+}
 pub fn AdaptiveSearchResult::equal(Self, Self) -> Bool
 pub fn AdaptiveSearchResult::not_equal(Self, Self) -> Bool
-pub fn AdaptiveSearchResult::to_json(Self) -> Json
+pub fn AdaptiveSearchResult::to_json(Self) -> @json.Json
 pub fn AdaptiveSearchResult::to_repr(Self) -> @debug.Repr
 
 pub struct CompactResult {
@@ -37,32 +39,35 @@ pub struct CompactResult {
   mapping : FixedArray[Int32]
 }
 
+#derive(Eq)
 pub(all) enum Distance {
   L2
   InnerProduct
   Cosine
-} derive(Eq)
+}
 pub fn Distance::equal(Self, Self) -> Bool
 pub fn Distance::not_equal(Self, Self) -> Bool
 
+#derive(Eq, @debug.Debug, @json.ToJson)
 pub struct EfCalibration {
   selected_ef : Int32
   met_target : Bool
   trials : Array[EfTrial]
-} derive(Eq, ToJson, @debug.Debug)
+}
 pub fn EfCalibration::equal(Self, Self) -> Bool
 pub fn EfCalibration::not_equal(Self, Self) -> Bool
-pub fn EfCalibration::to_json(Self) -> Json
+pub fn EfCalibration::to_json(Self) -> @json.Json
 pub fn EfCalibration::to_repr(Self) -> @debug.Repr
 
+#derive(Eq, @debug.Debug, @json.ToJson)
 pub struct EfTrial {
   ef : Int32
   recall : Double
   avg_distance_computations : Double
-} derive(Eq, ToJson, @debug.Debug)
+}
 pub fn EfTrial::equal(Self, Self) -> Bool
 pub fn EfTrial::not_equal(Self, Self) -> Bool
-pub fn EfTrial::to_json(Self) -> Json
+pub fn EfTrial::to_json(Self) -> @json.Json
 pub fn EfTrial::to_repr(Self) -> @debug.Repr
 
 pub struct Hnsw {
@@ -138,6 +143,7 @@ pub struct HnswParams {
 }
 pub fn HnswParams::new(m? : Int32, ef_construction? : Int32, seed? : UInt64, storage? : Storage) -> Self
 
+#derive(Eq, @debug.Debug, @json.ToJson)
 pub struct HnswStats {
   count : Int32
   alive : Int32
@@ -145,28 +151,30 @@ pub struct HnswStats {
   nodes_per_level : Array[Int32]
   avg_degree_per_level : Array[Double]
   estimated_bytes : Int64
-} derive(Eq, ToJson, @debug.Debug)
+}
 pub fn HnswStats::equal(Self, Self) -> Bool
 pub fn HnswStats::not_equal(Self, Self) -> Bool
-pub fn HnswStats::to_json(Self) -> Json
+pub fn HnswStats::to_json(Self) -> @json.Json
 pub fn HnswStats::to_repr(Self) -> @debug.Repr
 
+#derive(Eq, @debug.Debug, @json.ToJson)
 pub struct Neighbor {
   id : Int32
   distance : Double
-} derive(Eq, ToJson, @debug.Debug)
+}
 pub fn Neighbor::equal(Self, Self) -> Bool
 pub fn Neighbor::not_equal(Self, Self) -> Bool
 pub fn Neighbor::output(Self, &Logger) -> Unit
-pub fn Neighbor::to_json(Self) -> Json
+pub fn Neighbor::to_json(Self) -> @json.Json
 pub fn Neighbor::to_repr(Self) -> @debug.Repr
 pub fn Neighbor::to_string(Self) -> String
 pub impl Show for Neighbor
 
+#derive(Eq)
 pub(all) enum Storage {
   Float32
   SQ8
-} derive(Eq)
+}
 pub fn Storage::equal(Self, Self) -> Bool
 pub fn Storage::not_equal(Self, Self) -> Bool
 

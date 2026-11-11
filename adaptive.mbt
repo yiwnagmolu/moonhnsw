@@ -1,5 +1,6 @@
 ///|
 /// Outcome of an adaptive filtered search.
+#derive(Eq, @debug.Debug, ToJson)
 pub struct AdaptiveSearchResult {
   /// Matching neighbors, sorted by distance ascending.
   neighbors : Array[Neighbor]
@@ -9,7 +10,7 @@ pub struct AdaptiveSearchResult {
   rounds : Int32
   /// Total distance computations across all rounds.
   distance_computations : Int64
-} derive(Eq, @debug.Debug, ToJson)
+}
 
 ///|
 pub extend AdaptiveSearchResult with Eq::{not_equal, equal}

@@ -41,8 +41,10 @@ pure MoonBit HNSW approximate nearest-neighbor search library (module
 
 ## Commands
 
-- `moon test --target wasm-gc` — run the suite (also `--target js`, and
-  `--target native` where a C toolchain exists; on Windows that means MSVC).
+- `moon version --all` — record the toolchain. The supported baseline is
+  `moonc` 0.10.20. CI checks, builds, and tests wasm, wasm-gc, js, and native.
+- `moon test --target wasm-gc` — run the suite. Windows native also needs an
+  MSVC-compatible compiler and the Windows SDK.
 - `moon info && moon fmt` — refresh generated interfaces, then format. Always
   run both before committing; CI gates on `moon fmt --check`.
 - `moon run --target wasm-gc examples/benchmark` — build / recall / QPS
@@ -53,8 +55,8 @@ pure MoonBit HNSW approximate nearest-neighbor search library (module
 
 - Code is organized in `///|`-separated blocks; keep internal helpers and
   types `priv`.
-- Public result types derive `Eq` / `@debug.Debug` with explicit `pub extend`
-  declarations (the implicit method promotion is deprecated).
+- Use `#derive(...)` before type declarations. Public result types derive
+  `Eq` / `@debug.Debug` with explicit `pub extend` declarations.
 - Raising functions declare `raise HnswError`; user-input mistakes surface as
   `InvalidParams` / `DimMismatch` / `InvalidId`, damaged payloads as
   `CorruptData`.
